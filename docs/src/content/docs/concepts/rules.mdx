@@ -30,7 +30,7 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 | Constraint | Rationale |
 |---|---|
 | Dense, not verbose | Verbose content degrades LLM performance |
-| No duplication | Duplication is the norm without discipline |
+| No duplication | Context files drift apart fast without structure |
 | No speculative examples | They drift and carry wrong context |
 | Critical info at start and end | LLMs have a U-shaped attention curve |
 
@@ -40,7 +40,7 @@ Any `*.context.md` may link to `docs/` files with markdown links. A domain conte
 
 ## Domain-Driven Thinking
 
-Clear domain boundaries with business-language context are required. Full DDD implementation is strongly recommended but not mandatory. What matters: every domain has a `domain.context.md` written in business terms, with vocabulary shared between product and code.
+Every domain needs a `domain.context.md` written in business terms, with vocabulary shared between product and code. Full DDD is recommended but not mandatory.
 
 ## Testing
 
@@ -51,4 +51,4 @@ Clear domain boundaries with business-language context are required. Full DDD im
 
 ## Propose First
 
-Every significant action — implementation plans, architectural decisions, approach choices — must be proposed and approved before execution. This minimizes wasted iterations and keeps the user in control.
+Agents propose before acting. Implementation plans, architecture decisions, approach choices all need approval before execution.

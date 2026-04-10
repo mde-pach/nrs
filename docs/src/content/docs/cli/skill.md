@@ -5,7 +5,7 @@ description: The NRS setup skill for agentic tools.
 
 ## What It Does
 
-The `nrs-setup` skill guides an AI agent through bootstrapping NRS in an existing project. It reads the README, asks targeted questions, and creates context files interactively.
+The `nrs-setup` skill bootstraps NRS in an existing project. It reads the README, asks questions, and creates context files.
 
 ## Install
 
