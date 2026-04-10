@@ -4,10 +4,12 @@ import starlight from '@astrojs/starlight';
 import astroMermaid from 'astro-mermaid';
 
 export default defineConfig({
+	site: 'https://mde-pach.github.io',
+	base: '/nrs',
 	integrations: [
 		starlight({
 			title: 'NRS',
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/maximedepachtere/nrs' }],
+			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/mde-pach/nrs' }],
 			sidebar: [
 				{ label: 'Overview', slug: 'overview' },
 				{ label: 'Quick Start', slug: 'quickstart' },
