@@ -1,0 +1,48 @@
+# NRS Context
+
+This project uses NRS for context organization and development workflow.
+
+## Context Discovery
+
+When entering a new directory, glob for `*.context.md`. Read relevant context before making changes.
+
+## Writing and Editing Context
+
+- No source file paths — no references to specific files or directories
+- `domain.context.md` is business language — no types, no code, no framework names
+- `implementation.context.md` describes patterns — not file listings
+- Same-level contexts may reference each other to state facts, but must not delegate understanding
+- Docs (`docs/`) may be referenced from any context file with markdown links, not just project level
+- Concise and dense — every line must earn its place. No duplication across files.
+- Refactoring test: would a code refactor (without behavior change) break this line? If yes → it belongs in code
+
+## Context Updates
+
+Update context when business concepts, patterns, or domain rules change. Do not update for refactoring, renaming, or adding files.
+
+## Propose First, Act After
+
+Every significant action must be proposed and approved before execution. This includes implementation plans, architectural decisions, and approach choices. Do not start work without explicit user alignment. This minimizes wasted iterations and ensures the user stays in control of direction.
+
+## Testing
+
+- Test-driven bug fixing: write a failing test first, then fix
+- Integration and e2e over unit tests — hit real infrastructure, mocks hide real issues
+- Tests must be deterministic — if intermittent, increase input volume until reliably captured
+- If there is no test, the spec is unverified
+
+## Writing Standards
+
+- Concise — short statements over verbose explanations
+- Non-repetitive — never duplicate what exists elsewhere
+- No speculative examples — state rules and facts only
+- Inline docs explain *why*, not *what*
+
+## Sub-Agent Strategy
+
+For multi-file or multi-domain analysis, use sub-agents with focused subsets rather than loading everything into one context.
+
+## Commands
+
+- `nrs generate all` — regenerate tool entry points from context
+- `nrs validate` — check context files for violations

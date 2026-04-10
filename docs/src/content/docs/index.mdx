@@ -1,0 +1,31 @@
+---
+title: NRS
+description: Nested Reference System — agentic context and codebase organization.
+template: splash
+hero:
+  tagline: Structure context for humans and AI agents. Research-backed. DDD-native. Tool-agnostic.
+  actions:
+    - text: Get Started
+      link: /overview/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/maximedepachtere/nrs
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+	<Card title="7 Layers" icon="list-format">
+		Concentric context from developer preferences to code. Each layer has an owner, a scope, and strict boundaries.
+	</Card>
+	<Card title="Anti-Coupling" icon="puzzle">
+		Context files survive refactoring. No file paths, no code in business docs, no invisible dependencies.
+	</Card>
+	<Card title="Research-Backed" icon="open-book">
+		19 academic papers. Size limits, density rules, and loading strategies derived from empirical LLM studies.
+	</Card>
+	<Card title="One CLI" icon="setting">
+		`nrs generate` · `nrs validate` · `nrs init` · `nrs install` — generates, validates, and automates.
+	</Card>
+</CardGrid>

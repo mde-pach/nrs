@@ -1,0 +1,51 @@
+---
+title: Workflow
+description: Development workflow and agent guidelines.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+## Feature Flow
+
+<Steps>
+1. Ticket enablement
+2. Plan the approach — present and get approval
+3. Implement
+4. Add integration / e2e tests
+5. Verify all tests pass
+6. Commit
+7. Update context if business concepts or patterns changed
+</Steps>
+
+## Bug Fix Flow
+
+<Steps>
+1. Identify the bug
+2. Write a failing test that captures it
+3. Invest in the test until it reliably reproduces
+4. Fix the bug
+5. Verify the test passes
+6. Commit
+</Steps>
+
+<Aside type="caution">Test before fix. Always.</Aside>
+
+## Agent Guidelines
+
+| Guideline | Description |
+|---|---|
+| **Propose first** | Present plan, get approval, then work |
+| **Ticket-scoped** | No changes outside current scope |
+| **Sub-agents** | Decompose multi-file analysis into focused sub-agents |
+| **Context discovery** | Glob `*.context.md` when entering new directories |
+| **Concise** | No verbose summaries, no repeated information |
+
+## Precommit
+
+`nrs init` creates a hook that runs on every commit:
+
+```
+nrs generate all → nrs validate → git add -u
+```
+
+Generated files are always current. Validation errors block the commit.

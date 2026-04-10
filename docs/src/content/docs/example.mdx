@@ -1,0 +1,39 @@
+---
+title: Example
+description: A Next.js e-commerce project organized with NRS.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import ProjectTree from '../../components/ProjectTree.astro';
+
+## Hello World Commerce
+
+A minimal e-commerce app with two domains — **Products** (catalog, inventory) and **Orders** (cart, checkout). Next.js App Router, SQLite via Prisma, Vitest integration tests.
+
+Toggle between the source context files and what the project looks like after `nrs generate claude`. Click any context or CLAUDE.md file to read its content.
+
+<ProjectTree />
+
+<Aside type="tip">Context files (green) are the source of truth. CLAUDE.md files (amber) are generated from them. The agent reads CLAUDE.md, never the context files directly.</Aside>
+
+## What to Notice
+
+| Pattern | Where |
+|---|---|
+| Project map links to `docs/` with markdown links | `project.context.md` |
+| Business language only, no types | `domain.context.md` |
+| Patterns only, no file listings | `implementation.context.md` |
+| Exception context where behavior differs | `api/orders/implementation.context.md` |
+| Cross-domain calls through services only | orders → products services |
+| Integration tests on real DB, no mocks | `__tests__/` directories |
+
+## Run It
+
+```bash
+cd examples/hello-world
+npm install && npm run db:setup
+npm run dev           # http://localhost:3000
+npm test              # 7 integration tests
+nrs generate claude   # generate CLAUDE.md at every level
+nrs validate          # check constraints
+```

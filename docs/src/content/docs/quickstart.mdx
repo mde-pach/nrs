@@ -1,0 +1,76 @@
+---
+title: Quick Start
+description: Set up NRS in 5 minutes.
+---
+
+import { Steps, Code } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Install**
+
+   ```bash
+   git clone https://github.com/maximedepachtere/nrs.git /tmp/nrs
+   cd /tmp/nrs/cli && cargo install --path .
+   ```
+
+2. **Initialize**
+
+   ```bash
+   cd your-project
+   nrs init
+   ```
+
+   Creates `nrs.context.md` (agent rules) + precommit hook.
+
+3. **Create the project map**
+
+   ```markdown title="project.context.md"
+   # Project Context — My App
+
+   ## Purpose
+   What the project does.
+
+   ## Architecture
+   - Next.js — frontend and API
+   - PostgreSQL via Prisma
+
+   ## Domains
+   - **Users** — auth and profiles
+   - **Billing** — subscriptions
+
+   ## Documentation
+   - [Testing](docs/testing.md) — test setup
+
+   ## Tools
+   - `npm run dev` — dev server
+   - `npm test` — tests
+   ```
+
+4. **Add domain context** in each domain directory
+
+   ```markdown title="src/domains/users/domain.context.md"
+   # Domain Context — Users
+
+   ## Core Concepts
+   - **User**: A person with an account, email, and role.
+
+   ## Business Rules
+   - Emails must be unique
+   - Deactivated users cannot authenticate
+   ```
+
+5. **Generate and validate**
+
+   ```bash
+   nrs generate claude   # CLAUDE.md at every level
+   nrs validate          # check constraints
+   ```
+
+6. **Install the skill** (optional)
+
+   ```bash
+   nrs install claude
+   ```
+
+</Steps>

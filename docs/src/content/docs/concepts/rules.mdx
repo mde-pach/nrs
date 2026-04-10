@@ -1,0 +1,54 @@
+---
+title: Rules
+description: Reference rules, anti-coupling, writing constraints, and testing.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Reference Rules
+
+| Direction | Allowed | Example |
+|---|---|---|
+| **Same level** ✅ | State facts about peers | Domain A: "Orders snapshot product price" |
+| **Higher** ❌ | Never reference outer layers | Domain must not mention Jira or Slack |
+| **Lower** ⚠️ | Avoid referencing inner layers | Domain must not mention Prisma or HTTP |
+
+<Aside type="caution">Same-level references state facts. They do not delegate understanding.</Aside>
+
+## Anti-Coupling
+
+| Rule | Do | Don't |
+|---|---|---|
+| No source paths | — | `src/services/product.ts` |
+| Domain = business | "a product has a price" | `priceInCents: number` |
+| Impl = patterns | "stateless, deps injected" | "product-service.ts handles CRUD" |
+
+**Refactoring test:** if the code were refactored without changing behavior, would this line break? If yes → it belongs in code.
+
+## Writing Constraints
+
+| Constraint | Rationale |
+|---|---|
+| Dense, not verbose | Verbose content degrades LLM performance |
+| No duplication | Duplication is the norm without discipline |
+| No speculative examples | They drift and carry wrong context |
+| Critical info at start and end | LLMs have a U-shaped attention curve |
+
+## Documentation References
+
+Any `*.context.md` may link to `docs/` files with markdown links. A domain context can link to a business process doc, an implementation context can link to a patterns guide.
+
+## Domain-Driven Thinking
+
+Clear domain boundaries with business-language context are required. Full DDD implementation is strongly recommended but not mandatory. What matters: every domain has a `domain.context.md` written in business terms, with vocabulary shared between product and code.
+
+## Testing
+
+- **Test-driven bug fixing**: write a failing test first, invest in it, then fix
+- **Integration and e2e over unit**: hit real infrastructure — mocks hide real issues
+- **Deterministic tests**: if intermittent, increase input volume until reliably captured
+- **No test = unverified spec**
+
+## Propose First
+
+Every significant action — implementation plans, architectural decisions, approach choices — must be proposed and approved before execution. This minimizes wasted iterations and keeps the user in control.

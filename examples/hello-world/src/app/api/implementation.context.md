@@ -1,0 +1,10 @@
+# Implementation Context — API Routes
+
+## Patterns
+
+- Routes are the only layer that deals with HTTP concepts (status codes, request/response shapes, query params)
+- Services throw typed domain errors — routes catch them and map to appropriate HTTP status codes. Unhandled errors propagate to the framework's default 500 handler.
+- Error response shape: `{ error: string }` with the corresponding status code
+- Input validation happens at route level before calling services — missing required params return 400
+- Success responses wrap domain data in a named key: `{ products: [...] }`, `{ order: {...} }` — never bare arrays or objects
+- Routes are thin: validate input, call one service function, return the result. No business logic lives here.

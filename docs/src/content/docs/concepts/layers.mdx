@@ -1,0 +1,55 @@
+---
+title: Context Layers
+description: The 7 concentric layers of NRS.
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+## The Model
+
+<CardGrid>
+  <Card title="1 · Developer" icon="pencil">Personal preferences. Not committed.</Card>
+  <Card title="2 · Corporate" icon="document">Company-wide standards and tools.</Card>
+  <Card title="3 · Team" icon="group">Team conventions and deviations.</Card>
+  <Card title="4 · Project" icon="star">Purpose, architecture, and navigation map.</Card>
+  <Card title="5 · Domain" icon="translate">Business concepts in ubiquitous language.</Card>
+  <Card title="6 · Implementation" icon="setting">Patterns and architectural decisions.</Card>
+  <Card title="7 · Code" icon="document">Source files and inline documentation.</Card>
+</CardGrid>
+
+Each inner layer is contained within the outer. Context becomes more specific as you go deeper.
+
+## Files
+
+| # | Layer | File | Location | Owner |
+|---|---|---|---|---|
+| — | NRS | `nrs.context.md` | root | — |
+| 1 | Developer | tool config | outside repo | developer |
+| 2 | Corporate | `corporate.context.md` | root | eng leadership |
+| 3 | Team | `team.context.md` | root | team lead |
+| 4 | Project | `project.context.md` | root | tech lead |
+| 5 | Domain | `domain.context.md` | domain dir | product |
+| 6 | Implementation | `implementation.context.md` | impl area | developers |
+| 7 | Code | source files | everywhere | developers |
+
+## Size Limits
+
+| Scope | Max | Enforced as |
+|---|---|---|
+| Root combined (nrs + corporate + team + project) | ~500 lines | warning |
+| domain.context.md | ~300 lines | warning |
+| implementation.context.md | ~300 lines | warning |
+
+<Aside>These are ceilings. Shorter is always better — removing noise improves accuracy.</Aside>
+
+## Loading Strategy
+
+| Tier | Contents | When loaded |
+|---|---|---|
+| **Hot** | nrs · corporate · team · project | Always in agent memory |
+| **Warm** | domain · implementation | On entering directory |
+| **Cold** | `docs/` | On demand when task requires |
+
+## The Project Map
+
+`project.context.md` is the entry point. It indexes: purpose, architecture, domains, documentation (as markdown links), tools, commands, skills, MCP servers. An agent reading this file knows what exists and where to look.

@@ -1,0 +1,553 @@
+---
+import fs from 'node:fs';
+import path from 'node:path';
+import { marked } from 'marked';
+import { createHighlighter } from 'shiki';
+
+const shiki = await createHighlighter({
+  themes: ['one-dark-pro'],
+  langs: ['typescript', 'tsx', 'json', 'css', 'prisma', 'markdown', 'bash', 'yaml'],
+});
+
+interface TreeNode {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  isContext: boolean;
+  isClaude: boolean;
+  content?: string;
+  children?: TreeNode[];
+}
+
+const exampleRoot = path.resolve(process.cwd(), '../examples/hello-world');
+
+function shouldInclude(name: string): boolean {
+  if (name.startsWith('.') && name !== '.env') return false;
+  if (['node_modules', 'target', '.next', 'package-lock.json', 'next-env.d.ts'].includes(name)) return false;
+  return true;
+}
+
+function isSourceFile(name: string): boolean {
+  return /\.(ts|tsx|css|prisma|json|mjs)$/.test(name);
+}
+
+function isContextFile(name: string): boolean {
+  return name.endsWith('.context.md');
+}
+
+function isClaudeFile(name: string): boolean {
+  return name === 'CLAUDE.md';
+}
+
+function isDocFile(name: string, dirName: string): boolean {
+  return dirName === 'docs' && name.endsWith('.md');
+}
+
+function getFileIcon(name: string): string {
+  if (name.endsWith('.context.md')) return 'ctx';
+  if (name === 'CLAUDE.md') return 'bot';
+  if (name.endsWith('.ts') || name.endsWith('.tsx')) return 'ts';
+  if (name.endsWith('.css')) return 'css';
+  if (name.endsWith('.json')) return 'json';
+  if (name.endsWith('.prisma')) return 'db';
+  if (name.endsWith('.md')) return 'md';
+  if (name.endsWith('.mjs')) return 'js';
+  return 'file';
+}
+
+function getLang(filename: string): string {
+  if (filename.endsWith('.tsx')) return 'tsx';
+  if (filename.endsWith('.ts')) return 'typescript';
+  if (filename.endsWith('.json')) return 'json';
+  if (filename.endsWith('.css')) return 'css';
+  if (filename.endsWith('.prisma')) return 'prisma';
+  if (filename.endsWith('.md')) return 'markdown';
+  if (filename.endsWith('.mjs')) return 'typescript';
+  return 'bash';
+}
+
+function highlightFile(raw: string, filename: string): string {
+  return shiki.codeToHtml(raw, {
+    lang: getLang(filename),
+    theme: 'one-dark-pro',
+  });
+}
+
+function buildTree(dirPath: string, relativeTo: string): TreeNode[] {
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+    .filter(e => shouldInclude(e.name))
+    .sort((a, b) => {
+      if (a.isDirectory() && !b.isDirectory()) return -1;
+      if (!a.isDirectory() && b.isDirectory()) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+  return entries.map(entry => {
+    const fullPath = path.join(dirPath, entry.name);
+    const relPath = path.relative(relativeTo, fullPath);
+
+    if (entry.isDirectory()) {
+      const children = buildTree(fullPath, relativeTo);
+      if (children.length === 0) return null;
+      return { name: entry.name, path: relPath, type: 'dir' as const, isContext: false, isClaude: false, children };
+    }
+
+    const isCtx = isContextFile(entry.name);
+    const isCld = isClaudeFile(entry.name);
+    const dirName = path.basename(dirPath);
+    const isDoc = isDocFile(entry.name, dirName);
+    if (!isSourceFile(entry.name) && !isCtx && !isCld && !entry.name.endsWith('.md')) return null;
+
+    const node: TreeNode = { name: entry.name, path: relPath, type: 'file', isContext: isCtx, isClaude: isCld };
+    // Load content for all readable files (context, claude, docs, source)
+    try { node.content = fs.readFileSync(fullPath, 'utf-8'); } catch {}
+    return node;
+  }).filter(Boolean) as TreeNode[];
+}
+
+const tree = buildTree(exampleRoot, exampleRoot);
+
+interface ModalData {
+  id: string;
+  name: string;
+  path: string;
+  raw: string;
+  highlighted: string;
+  rendered: string;
+  kind: string;
+  isMd: boolean;
+}
+
+function collectModals(nodes: TreeNode[]): ModalData[] {
+  const modals: ModalData[] = [];
+  for (const node of nodes) {
+    if (node.content) {
+      const id = `modal-${node.path.replace(/[\/\.]/g, '-')}`;
+      const isMd = node.name.endsWith('.md');
+      modals.push({
+        id,
+        name: node.name,
+        path: node.path,
+        raw: node.content,
+        highlighted: highlightFile(node.content, node.name),
+        rendered: isMd ? marked.parse(node.content, { async: false }) as string : '',
+        kind: node.isContext ? 'context' : node.isClaude ? 'claude' : node.path.startsWith('docs/') ? 'doc' : 'source',
+        isMd,
+      });
+    }
+    if (node.children) modals.push(...collectModals(node.children));
+  }
+  return modals;
+}
+
+const modals = collectModals(tree);
+---
+
+<div class="nrs-tree-wrapper">
+  <div class="nrs-tree-tabs" role="tablist">
+    <button role="tab" class="nrs-tab active" aria-selected="true" data-view="context">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Context files
+    </button>
+    <button role="tab" class="nrs-tab" aria-selected="false" data-view="claude">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      After <code>nrs generate</code>
+    </button>
+  </div>
+
+  <div class="nrs-tree" data-tree>
+    {(function renderTree(nodes: TreeNode[], depth: number): any {
+      return nodes.map(node => {
+        if (node.type === 'dir') {
+          return (
+            <details class="nrs-dir" open style={`--depth: ${depth}`}>
+              <summary>
+                <svg class="nrs-icon nrs-icon-dir" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <span class="nrs-dir-name">{node.name}</span>
+              </summary>
+              <div class="nrs-dir-children">
+                {node.children && renderTree(node.children, depth + 1)}
+              </div>
+            </details>
+          );
+        }
+
+        const icon = getFileIcon(node.name);
+        const modalId = node.content ? `modal-${node.path.replace(/[\/\.]/g, '-')}` : null;
+        const viewClass = node.isClaude ? 'nrs-claude-only' : node.isContext ? 'nrs-context-only' : '';
+        const kindClass = node.isContext ? 'nrs-file--context'
+          : node.isClaude ? 'nrs-file--claude'
+          : node.path.startsWith('docs/') ? 'nrs-file--doc'
+          : node.content ? 'nrs-file--source' : '';
+
+        return (
+          <div class={`nrs-file ${kindClass} ${viewClass}`} style={`--depth: ${depth}`}>
+            <span class={`nrs-icon nrs-icon-${icon}`} aria-hidden="true" />
+            {modalId ? (
+              <button class="nrs-file-btn" data-modal={modalId} title={`View ${node.path}`}>{node.name}</button>
+            ) : (
+              <span class="nrs-file-name">{node.name}</span>
+            )}
+          </div>
+        );
+      });
+    })(tree, 0)}
+  </div>
+
+  <div class="nrs-tree-legend">
+    <span class="nrs-legend-item nrs-legend-ctx"><span class="nrs-legend-dot" /> context</span>
+    <span class="nrs-legend-item nrs-legend-claude"><span class="nrs-legend-dot" /> generated</span>
+    <span class="nrs-legend-item nrs-legend-doc"><span class="nrs-legend-dot" /> docs</span>
+    <span class="nrs-legend-item nrs-legend-source"><span class="nrs-legend-dot" /> source</span>
+  </div>
+</div>
+
+{modals.map(modal => (
+  <dialog id={modal.id} class={`nrs-modal nrs-modal--${modal.kind}`}>
+    <div class="nrs-modal-chrome" data-drag-handle>
+      <span class="nrs-modal-title">{modal.path}</span>
+      <button class="nrs-chrome-btn" data-close={modal.id} title="Close">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="nrs-modal-content">
+      {modal.isMd && (
+        <div class="nrs-view-pill">
+          <button class="nrs-pill-btn active" data-modal-tab="raw" data-for={modal.id}>Raw</button>
+          <button class="nrs-pill-btn" data-modal-tab="preview" data-for={modal.id}>Preview</button>
+        </div>
+      )}
+      <div class="nrs-modal-body">
+        <div class="nrs-modal-raw" set:html={modal.highlighted} />
+        {modal.isMd && (
+          <div class="nrs-modal-preview"><div class="nrs-md-render" set:html={modal.rendered} /></div>
+        )}
+      </div>
+    </div>
+  </dialog>
+))}
+
+<style>
+  /* ── Wrapper ──────────────────────────── */
+  .nrs-tree-wrapper {
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    margin: 1.5rem 0;
+    background: var(--sl-color-bg);
+  }
+
+  /* ── Tabs ──────────────────────────────── */
+  .nrs-tree-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--sl-color-gray-5);
+    background: var(--sl-color-gray-7, var(--sl-color-gray-6));
+  }
+  .nrs-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1rem;
+    border: none;
+    background: transparent;
+    color: var(--sl-color-gray-3);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-family: var(--sl-font);
+    transition: color 0.15s, box-shadow 0.15s;
+  }
+  .nrs-tab code { font-size: 0.75rem; padding: 0.1em 0.35em; background: var(--sl-color-gray-5); border-radius: 3px; }
+  .nrs-tab.active { color: var(--sl-color-text); box-shadow: inset 0 -2px 0 var(--sl-color-accent); }
+  .nrs-tab:hover:not(.active) { color: var(--sl-color-text); }
+
+  /* ── Tree ──────────────────────────────── */
+  .nrs-tree {
+    padding: 4px 0; font-family: var(--sl-font-mono); font-size: 13px;
+    line-height: 24px;
+  }
+  .nrs-tree * { margin: 0; padding: 0; }
+
+  .nrs-dir {
+    margin: 0 !important; padding: 0 !important;
+  }
+  .nrs-dir > summary {
+    display: flex; align-items: center; gap: 4px;
+    padding-left: calc(var(--depth, 0) * 16px + 8px) !important;
+    cursor: pointer; list-style: none; border-radius: 0; user-select: none;
+    height: 24px; line-height: 24px;
+  }
+  .nrs-dir > summary::-webkit-details-marker { display: none; }
+  .nrs-dir > summary::before {
+    content: '▶'; font-size: 7px; color: var(--sl-color-gray-3);
+    transition: transform 0.12s; flex-shrink: 0; width: 10px; text-align: center;
+  }
+  .nrs-dir[open] > summary::before { transform: rotate(90deg); }
+  .nrs-dir > summary:hover { background: var(--sl-color-gray-6); }
+  .nrs-dir-name { color: var(--sl-color-text); font-weight: 500; }
+  .nrs-dir-children { margin: 0 !important; padding: 0 !important; }
+
+  .nrs-file {
+    display: flex; align-items: center; gap: 4px;
+    padding-left: calc(var(--depth, 0) * 16px + 8px + 10px + 4px) !important;
+    height: 24px; line-height: 24px;
+  }
+  .nrs-file:hover { background: var(--sl-color-gray-6); }
+  .nrs-file-name { color: var(--sl-color-gray-3); }
+
+  .nrs-icon { flex-shrink: 0; }
+  .nrs-icon-dir { color: var(--sl-color-accent); }
+  .nrs-icon-ctx { display: inline-block; width: 14px; height: 14px; background: #22c55e; border-radius: 2px; opacity: 0.8; }
+  .nrs-icon-bot { display: inline-block; width: 14px; height: 14px; background: #f59e0b; border-radius: 2px; opacity: 0.8; }
+  .nrs-icon-ts { display: inline-block; width: 14px; height: 14px; background: #3178c6; border-radius: 2px; opacity: 0.6; font-size: 8px; color: white; text-align: center; line-height: 14px; font-weight: 700; }
+  .nrs-icon-ts::after { content: 'TS'; }
+  .nrs-icon-css { display: inline-block; width: 14px; height: 14px; background: #663399; border-radius: 2px; opacity: 0.6; }
+  .nrs-icon-json { display: inline-block; width: 14px; height: 14px; background: #eab308; border-radius: 2px; opacity: 0.5; }
+  .nrs-icon-db { display: inline-block; width: 14px; height: 14px; background: #06b6d4; border-radius: 2px; opacity: 0.6; }
+  .nrs-icon-md { display: inline-block; width: 14px; height: 14px; background: var(--sl-color-gray-4); border-radius: 2px; opacity: 0.5; }
+  .nrs-icon-js { display: inline-block; width: 14px; height: 14px; background: #eab308; border-radius: 2px; opacity: 0.5; }
+  .nrs-icon-file { display: inline-block; width: 14px; height: 14px; background: var(--sl-color-gray-4); border-radius: 2px; opacity: 0.4; }
+
+  .nrs-file-btn {
+    background: none; border: none; cursor: pointer; font-family: inherit; font-size: inherit;
+    padding: 0; color: inherit; transition: opacity 0.1s;
+  }
+  .nrs-file-btn:hover { opacity: 0.65; }
+  .nrs-file--context .nrs-file-btn { color: #22c55e; font-weight: 500; }
+  .nrs-file--claude .nrs-file-btn { color: #f59e0b; font-weight: 500; }
+  .nrs-file--doc .nrs-file-btn { color: #60a5fa; font-weight: 500; }
+  .nrs-file--source .nrs-file-btn { color: var(--sl-color-gray-3); }
+
+  .nrs-claude-only { display: none; }
+
+  .nrs-tree-legend {
+    display: flex; gap: 1.2rem; padding: 0.5rem 1rem;
+    border-top: 1px solid var(--sl-color-gray-5); font-size: 0.72rem; color: var(--sl-color-gray-3);
+  }
+  .nrs-legend-item { display: flex; align-items: center; gap: 0.3rem; }
+  .nrs-legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .nrs-legend-ctx .nrs-legend-dot { background: #22c55e; }
+  .nrs-legend-claude .nrs-legend-dot { background: #f59e0b; }
+  .nrs-legend-doc .nrs-legend-dot { background: #60a5fa; }
+  .nrs-legend-source .nrs-legend-dot { background: var(--sl-color-gray-4); }
+</style>
+
+<style is:global>
+  /* ── Modal (global because <dialog> is portaled to document root) ── */
+  dialog.nrs-modal {
+    max-width: 700px; width: 92vw; max-height: 80vh;
+    border-radius: 10px; border: 1px solid var(--sl-color-gray-5);
+    padding: 0; background: var(--sl-color-bg); color: var(--sl-color-text);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    margin: 0;
+  }
+  dialog.nrs-modal.is-dragging { transition: none !important; }
+  dialog.nrs-modal.has-position { transform: none; }
+  dialog.nrs-modal::backdrop { background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  dialog.nrs-modal[open] { animation: nrs-modal-in 0.2s ease-out; }
+  @keyframes nrs-modal-in { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Chrome bar */
+  .nrs-modal .nrs-modal-chrome {
+    display: flex !important; flex-direction: row !important; align-items: center !important;
+    padding: 0 0.4rem !important; height: 28px !important; min-height: 28px !important;
+    background: var(--sl-color-gray-6) !important;
+    cursor: grab; user-select: none;
+    gap: 0 !important;
+  }
+  .nrs-modal .nrs-modal-chrome:active { cursor: grabbing; }
+  .nrs-modal .nrs-modal-title {
+    flex: 1 !important; font-family: var(--sl-font-mono) !important; font-size: 11px !important;
+    color: var(--sl-color-gray-3) !important;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 0 0.3rem !important; margin: 0 !important;
+    line-height: 28px !important;
+  }
+  .nrs-modal button.nrs-chrome-btn {
+    all: unset !important;
+    width: 20px !important; height: 20px !important;
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+    border-radius: 4px !important; cursor: pointer !important;
+    color: var(--sl-color-gray-3) !important;
+    flex-shrink: 0 !important; box-sizing: border-box !important;
+  }
+  .nrs-modal button.nrs-chrome-btn:hover {
+    background: var(--sl-color-gray-5) !important; color: var(--sl-color-text) !important;
+  }
+
+  /* Content wrapper */
+  .nrs-modal .nrs-modal-content { position: relative !important; }
+
+  /* Floating pill */
+  .nrs-modal .nrs-view-pill {
+    position: absolute !important; top: 6px !important; right: 8px !important; z-index: 2 !important;
+    display: inline-flex !important; flex-direction: row !important;
+    background: var(--sl-color-gray-5) !important; border-radius: 5px !important;
+    padding: 2px !important; gap: 1px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important;
+  }
+  .nrs-modal button.nrs-pill-btn {
+    all: unset !important;
+    font-size: 10px !important; font-family: var(--sl-font) !important; font-weight: 500 !important;
+    padding: 2px 7px !important; border-radius: 3px !important; cursor: pointer !important;
+    color: var(--sl-color-gray-3) !important; line-height: 1.4 !important;
+    box-sizing: border-box !important;
+    transition: background 0.12s, color 0.12s !important;
+  }
+  .nrs-modal button.nrs-pill-btn.active {
+    background: var(--sl-color-bg) !important; color: var(--sl-color-text) !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.12) !important;
+  }
+  .nrs-modal button.nrs-pill-btn:hover:not(.active) { color: var(--sl-color-text) !important; }
+
+  /* Body */
+  .nrs-modal .nrs-modal-body { overflow: auto !important; max-height: calc(80vh - 28px) !important; }
+
+  .nrs-modal .nrs-modal-raw pre {
+    margin: 0 !important; padding: 0.6rem 1rem !important;
+    font-size: 12px !important; line-height: 1.55 !important;
+    white-space: pre-wrap !important; word-break: break-word !important;
+    border: none !important; border-radius: 0 !important;
+  }
+  .nrs-modal .nrs-modal-raw pre code {
+    font-size: 12px !important; line-height: 1.55 !important;
+    background: transparent !important;
+  }
+  .nrs-modal .nrs-modal-raw .shiki {
+    background-color: transparent !important;
+  }
+
+  .nrs-modal .nrs-modal-preview { display: none; }
+  .nrs-modal .nrs-md-render {
+    padding: 1rem 1.5rem 2.5rem !important;
+    font-family: var(--sl-font) !important; font-size: 14px !important; line-height: 1.65 !important;
+  }
+  .nrs-modal .nrs-md-render h1 { font-size: 1.35rem !important; font-weight: 700 !important; margin: 0 0 0.6rem !important; border-bottom: 1px solid var(--sl-color-gray-5) !important; padding-bottom: 0.3rem !important; }
+  .nrs-modal .nrs-md-render h2 { font-size: 1.05rem !important; font-weight: 600 !important; margin: 1rem 0 0.4rem !important; }
+  .nrs-modal .nrs-md-render h3 { font-size: 0.92rem !important; font-weight: 600 !important; margin: 0.8rem 0 0.3rem !important; }
+  .nrs-modal .nrs-md-render ul { padding-left: 1.3rem !important; margin: 0.3rem 0 !important; }
+  .nrs-modal .nrs-md-render li { margin: 0.12rem 0 !important; }
+  .nrs-modal .nrs-md-render code {
+    font-size: 0.82em !important; padding: 0.12em 0.35em !important;
+    background: var(--sl-color-gray-6) !important; border-radius: 3px !important;
+    font-family: var(--sl-font-mono) !important;
+  }
+  .nrs-modal .nrs-md-render strong { font-weight: 600 !important; }
+  .nrs-modal .nrs-md-render p { margin: 0.35rem 0 !important; }
+  .nrs-modal .nrs-md-render a { color: var(--sl-color-accent) !important; text-decoration: underline !important; }
+
+</style>
+
+<script>
+  // ── Tree tab toggle ──
+  document.querySelectorAll('.nrs-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const tabs = tab.closest('.nrs-tree-tabs');
+      tabs?.querySelectorAll('.nrs-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+      tab.classList.add('active'); tab.setAttribute('aria-selected', 'true');
+      const view = tab.getAttribute('data-view');
+      const tree = tab.closest('.nrs-tree-wrapper')?.querySelector('.nrs-tree');
+      if (!tree) return;
+      tree.querySelectorAll('.nrs-context-only').forEach(el => { (el as HTMLElement).style.display = view === 'claude' ? 'none' : 'flex'; });
+      tree.querySelectorAll('.nrs-claude-only').forEach(el => { (el as HTMLElement).style.display = view === 'claude' ? 'flex' : 'none'; });
+    });
+  });
+
+  // ── Modal open ──
+  document.querySelectorAll('.nrs-file-btn[data-modal]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-modal');
+      if (!id) return;
+      const dialog = document.getElementById(id) as HTMLDialogElement;
+      if (!dialog) return;
+      dialog.classList.remove('has-position');
+      dialog.style.top = '50%'; dialog.style.left = '50%';
+      dialog.style.transform = 'translate(-50%, -50%)'; dialog.style.margin = '0';
+      // Reset to raw tab (only for md files that have the pill)
+      dialog.querySelectorAll('.nrs-pill-btn').forEach(t => t.classList.remove('active'));
+      dialog.querySelector('.nrs-pill-btn[data-modal-tab="raw"]')?.classList.add('active');
+      const raw = dialog.querySelector('.nrs-modal-raw') as HTMLElement | null;
+      const preview = dialog.querySelector('.nrs-modal-preview') as HTMLElement | null;
+      if (raw) raw.style.display = '';
+      if (preview) preview.style.display = 'none';
+      document.body.style.overflow = 'hidden';
+      dialog.showModal();
+    });
+  });
+
+  // ── Modal close ──
+  function closeModal(dialog: HTMLDialogElement) {
+    dialog.close();
+    document.body.style.overflow = '';
+  }
+  document.querySelectorAll('.nrs-chrome-btn[data-close]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dialog = document.getElementById(btn.getAttribute('data-close')!) as HTMLDialogElement;
+      if (dialog) closeModal(dialog);
+    });
+  });
+  document.querySelectorAll('.nrs-modal').forEach(dialog => {
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) closeModal(dialog as HTMLDialogElement); });
+    dialog.addEventListener('close', () => { document.body.style.overflow = ''; });
+  });
+
+  // ── Raw / Preview pill toggle ──
+  document.querySelectorAll('.nrs-pill-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const modalId = btn.getAttribute('data-for');
+      const dialog = modalId ? document.getElementById(modalId) : btn.closest('.nrs-modal');
+      if (!dialog) return;
+      const which = btn.getAttribute('data-modal-tab');
+      dialog.querySelectorAll('.nrs-pill-btn').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      const raw = dialog.querySelector('.nrs-modal-raw') as HTMLElement;
+      const preview = dialog.querySelector('.nrs-modal-preview') as HTMLElement;
+      raw.style.display = which === 'raw' ? '' : 'none';
+      preview.style.display = which === 'preview' ? 'block' : 'none';
+    });
+  });
+
+  // ── Drag ──
+  document.querySelectorAll('[data-drag-handle]').forEach(handle => {
+    let dragging = false;
+    let startX = 0, startY = 0, origX = 0, origY = 0;
+
+    handle.addEventListener('mousedown', (e: Event) => {
+      const me = e as MouseEvent;
+      const dialog = handle.closest('.nrs-modal') as HTMLElement;
+      if (!dialog || dialog.classList.contains('is-fullscreen')) return;
+      if ((me.target as HTMLElement).closest('button')) return;
+      dragging = true;
+      dialog.classList.add('is-dragging');
+      startX = me.clientX; startY = me.clientY;
+      const rect = dialog.getBoundingClientRect();
+      origX = rect.left; origY = rect.top;
+      me.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!dragging) return;
+      const dialog = handle.closest('.nrs-modal') as HTMLElement;
+      if (!dialog) return;
+      const newX = origX + (e.clientX - startX);
+      const newY = origY + (e.clientY - startY);
+      dialog.style.left = `${newX}px`;
+      dialog.style.top = `${newY}px`;
+      dialog.style.transform = 'none';
+      dialog.style.margin = '0';
+      dialog.classList.add('has-position');
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      const dialog = handle.closest('.nrs-modal') as HTMLElement;
+      dialog?.classList.remove('is-dragging');
+    });
+  });
+</script>
