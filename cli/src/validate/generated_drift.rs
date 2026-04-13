@@ -1,26 +1,45 @@
-use super::Finding;
-use crate::context::DirectoryContext;
-use crate::generators::Generator;
-use std::path::Path;
+use super::{Finding, Validator, ValidatorScope};
+use crate::generators::{self, Generator};
+use crate::model::ContextSet;
+
+/// Validator that checks generated files match what the generator would produce.
+pub struct GeneratedDriftValidator {
+    generator: Box<dyn Generator>,
+}
+
+impl GeneratedDriftValidator {
+    pub fn new(generator: Box<dyn Generator>) -> Self {
+        Self { generator }
+    }
+}
+
+impl Validator for GeneratedDriftValidator {
+    fn name(&self) -> &str {
+        "generated_drift"
+    }
+
+    fn scope(&self) -> ValidatorScope {
+        ValidatorScope::Global
+    }
+
+    fn check_all(&self, ctx_set: &ContextSet) -> anyhow::Result<Vec<Finding>> {
+        check(ctx_set, self.generator.as_ref())
+    }
+}
 
 /// Check that generated files match what the generator would produce.
-/// Compares actual file on disk with freshly generated content.
-pub fn check(
-    root: &Path,
-    contexts: &[DirectoryContext],
-    gen: &dyn Generator,
-) -> anyhow::Result<Vec<Finding>> {
+fn check(ctx_set: &ContextSet, gen: &dyn Generator) -> anyhow::Result<Vec<Finding>> {
     let mut findings = Vec::new();
 
-    for ctx in contexts {
-        let output_path = ctx.dir.join(gen.output_filename());
+    for dir_ctx in &ctx_set.directories {
+        let output_path = dir_ctx.dir.join(gen.output_filename());
         let relative = output_path
-            .strip_prefix(root)
+            .strip_prefix(&ctx_set.root)
             .unwrap_or(&output_path)
             .to_string_lossy()
             .to_string();
 
-        let expected = gen.generate(ctx);
+        let expected = generators::generate_and_rewrite(gen, dir_ctx, ctx_set);
 
         match std::fs::read_to_string(&output_path) {
             Ok(actual) => {
@@ -53,34 +72,47 @@ pub fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::DirectoryContext;
     use crate::generators::claude::ClaudeGenerator;
-    use crate::generators::Generator;
-    use std::collections::BTreeMap;
+    use crate::model::{ContextFile, DirectoryContext, Layer};
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    fn make_ctx(dir: PathBuf, files: Vec<(&str, &str)>) -> DirectoryContext {
-        let mut map = BTreeMap::new();
-        for (name, content) in files {
-            map.insert(name.to_string(), content.to_string());
+    fn make_ctx_set(dir: PathBuf, files: Vec<(&str, &str)>) -> ContextSet {
+        let mut ctx_files: Vec<ContextFile> = files
+            .into_iter()
+            .map(|(name, content)| ContextFile {
+                relative_path: name.to_string(),
+                filename: name.to_string(),
+                layer: Layer::from_filename(name),
+                content: content.to_string(),
+            })
+            .collect();
+        ctx_files.sort_by_key(|f| f.layer.sort_priority());
+
+        let root = dir.clone();
+        ContextSet {
+            root,
+            directories: vec![DirectoryContext {
+                dir,
+                relative_dir: String::new(),
+                files: ctx_files,
+            }],
         }
-        DirectoryContext { dir, files: map }
     }
 
     #[test]
     fn matching_generated_file_passes() {
         let tmp = TempDir::new().unwrap();
         let gen = ClaudeGenerator;
-        let ctx = make_ctx(
+        let ctx_set = make_ctx_set(
             tmp.path().to_path_buf(),
             vec![("project.context.md", "# Project")],
         );
 
-        let expected = gen.generate(&ctx);
+        let expected = generators::generate_and_rewrite(&gen, &ctx_set.directories[0], &ctx_set);
         std::fs::write(tmp.path().join("CLAUDE.md"), &expected).unwrap();
 
-        let findings = check(tmp.path(), &[ctx], &gen).unwrap();
+        let findings = check(&ctx_set, &gen).unwrap();
         assert!(findings.is_empty());
     }
 
@@ -88,14 +120,14 @@ mod tests {
     fn mismatched_generated_file_is_error() {
         let tmp = TempDir::new().unwrap();
         let gen = ClaudeGenerator;
-        let ctx = make_ctx(
+        let ctx_set = make_ctx_set(
             tmp.path().to_path_buf(),
             vec![("project.context.md", "# Project")],
         );
 
         std::fs::write(tmp.path().join("CLAUDE.md"), "hand edited").unwrap();
 
-        let findings = check(tmp.path(), &[ctx], &gen).unwrap();
+        let findings = check(&ctx_set, &gen).unwrap();
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("out of date"));
     }
@@ -104,12 +136,12 @@ mod tests {
     fn missing_generated_file_is_error() {
         let tmp = TempDir::new().unwrap();
         let gen = ClaudeGenerator;
-        let ctx = make_ctx(
+        let ctx_set = make_ctx_set(
             tmp.path().to_path_buf(),
             vec![("project.context.md", "# Project")],
         );
 
-        let findings = check(tmp.path(), &[ctx], &gen).unwrap();
+        let findings = check(&ctx_set, &gen).unwrap();
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("missing"));
     }

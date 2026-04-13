@@ -1,5 +1,5 @@
-use crate::context::DirectoryContext;
 use crate::generators::Generator;
+use crate::model::DirectoryContext;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -22,21 +22,17 @@ impl Generator for ClaudeGenerator {
         let mut out = String::from(HEADER);
         out.push_str("\n\n");
 
-        let ordered = order_files(ctx);
-
-        let sections: Vec<&str> = ordered
+        // Files are already sorted by layer priority in ContextSet.
+        let sections: Vec<&str> = ctx
+            .files
             .iter()
-            .map(|s| s.trim())
+            .map(|f| f.content.trim())
             .filter(|s| !s.is_empty())
             .collect();
 
         out.push_str(&sections.join("\n\n"));
         out.push('\n');
         out
-    }
-
-    fn ignore_patterns(&self) -> Vec<&str> {
-        IGNORE_PATTERNS.to_vec()
     }
 
     fn apply_ignores(&self, project_root: &Path) -> anyhow::Result<()> {
@@ -91,45 +87,29 @@ impl Generator for ClaudeGenerator {
     }
 }
 
-/// Order context files: corporate → team → domain → implementation → CONTEXT.md last.
-fn order_files(ctx: &DirectoryContext) -> Vec<&str> {
-    fn priority(name: &str) -> u8 {
-        match name {
-            "nrs.context.md" => 0,
-            "corporate.context.md" => 1,
-            "team.context.md" => 2,
-            "project.context.md" => 3,
-            "domain.context.md" => 4,
-            "implementation.context.md" => 5,
-            _ => 6,
-        }
-    }
-
-    let mut entries: Vec<(&str, &str)> = ctx
-        .files
-        .iter()
-        .map(|(name, content)| (name.as_str(), content.as_str()))
-        .collect();
-
-    entries.sort_by_key(|(name, _)| priority(name));
-    entries.into_iter().map(|(_, content)| content).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::generators::Generator;
+    use crate::model::{ContextFile, ContextSet, DirectoryContext, Layer};
     use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn make_ctx(files: Vec<(&str, &str)>) -> DirectoryContext {
-        let mut map = BTreeMap::new();
-        for (name, content) in files {
-            map.insert(name.to_string(), content.to_string());
-        }
+        let mut ctx_files: Vec<ContextFile> = files
+            .into_iter()
+            .map(|(name, content)| ContextFile {
+                relative_path: name.to_string(),
+                filename: name.to_string(),
+                layer: Layer::from_filename(name),
+                content: content.to_string(),
+            })
+            .collect();
+        ctx_files.sort_by_key(|f| f.layer.sort_priority());
         DirectoryContext {
             dir: PathBuf::from("/tmp/test"),
-            files: map,
+            relative_dir: String::new(),
+            files: ctx_files,
         }
     }
 
@@ -239,13 +219,149 @@ mod tests {
         let gen = ClaudeGenerator;
         gen.apply_ignores(tmp.path()).unwrap();
 
-        let content =
-            std::fs::read_to_string(settings_dir.join("settings.local.json")).unwrap();
+        let content = std::fs::read_to_string(settings_dir.join("settings.local.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
         let patterns = parsed["ignorePatterns"].as_array().unwrap();
         assert!(patterns.contains(&serde_json::Value::String("node_modules".into())));
         assert!(patterns.contains(&serde_json::Value::String("*.context.md".into())));
         assert_eq!(parsed["other"], "preserved");
+    }
+
+    // ── Link rewriting via generate_and_rewrite ─────────────────────
+
+    fn make_ctx_set(dirs: Vec<(&str, Vec<(&str, &str)>)>) -> ContextSet {
+        let root = PathBuf::from("/tmp/test");
+        let directories = dirs
+            .into_iter()
+            .map(|(rel_dir, files)| {
+                let dir = if rel_dir.is_empty() {
+                    root.clone()
+                } else {
+                    root.join(rel_dir)
+                };
+                let mut ctx_files: Vec<ContextFile> = files
+                    .into_iter()
+                    .map(|(name, content)| {
+                        let relative_path = if rel_dir.is_empty() {
+                            name.to_string()
+                        } else {
+                            format!("{}/{}", rel_dir, name)
+                        };
+                        ContextFile {
+                            relative_path,
+                            filename: name.to_string(),
+                            layer: Layer::from_filename(name),
+                            content: content.to_string(),
+                        }
+                    })
+                    .collect();
+                ctx_files.sort_by_key(|f| f.layer.sort_priority());
+                DirectoryContext {
+                    dir,
+                    relative_dir: rel_dir.to_string(),
+                    files: ctx_files,
+                }
+            })
+            .collect();
+        ContextSet { root, directories }
+    }
+
+    #[test]
+    fn generate_rewrites_same_dir_context_link() {
+        let ctx_set = make_ctx_set(vec![(
+            "",
+            vec![
+                ("domain.context.md", "# Domain Context\n\nSee [Impl](implementation.context.md)."),
+                ("implementation.context.md", "# Implementation Context\n\nPatterns."),
+            ],
+        )]);
+        let gen = ClaudeGenerator;
+        let output = crate::generators::generate_and_rewrite(
+            &gen,
+            &ctx_set.directories[0],
+            &ctx_set,
+        );
+
+        assert!(
+            output.contains("[Impl](CLAUDE.md#implementation-context)"),
+            "expected rewritten same-dir link, got: {output}"
+        );
+        assert!(
+            !output.contains("implementation.context.md"),
+            "original context link should be gone"
+        );
+    }
+
+    #[test]
+    fn generate_rewrites_cross_dir_context_link() {
+        let ctx_set = make_ctx_set(vec![
+            (
+                "",
+                vec![(
+                    "project.context.md",
+                    "# Project\n\n- [Orders](src/orders/domain.context.md)",
+                )],
+            ),
+            (
+                "src/orders",
+                vec![("domain.context.md", "# Domain Context — Orders\n\nOrder rules.")],
+            ),
+        ]);
+        let gen = ClaudeGenerator;
+        let output = crate::generators::generate_and_rewrite(
+            &gen,
+            &ctx_set.directories[0],
+            &ctx_set,
+        );
+
+        assert!(
+            output.contains("[Orders](src/orders/CLAUDE.md#domain-context--orders)"),
+            "expected rewritten cross-dir link, got: {output}"
+        );
+    }
+
+    #[test]
+    fn generate_leaves_docs_links_unchanged() {
+        let ctx_set = make_ctx_set(vec![(
+            "",
+            vec![(
+                "project.context.md",
+                "# Project\n\n- [Testing](docs/testing.md)",
+            )],
+        )]);
+        let gen = ClaudeGenerator;
+        let output = crate::generators::generate_and_rewrite(
+            &gen,
+            &ctx_set.directories[0],
+            &ctx_set,
+        );
+
+        assert!(
+            output.contains("[Testing](docs/testing.md)"),
+            "docs link should be unchanged"
+        );
+    }
+
+    #[test]
+    fn generate_leaves_external_urls_unchanged() {
+        let ctx_set = make_ctx_set(vec![(
+            "",
+            vec![(
+                "project.context.md",
+                "# Project\n\n- [Ref](https://example.com/domain.context.md)",
+            )],
+        )]);
+        let gen = ClaudeGenerator;
+        let output = crate::generators::generate_and_rewrite(
+            &gen,
+            &ctx_set.directories[0],
+            &ctx_set,
+        );
+
+        assert!(
+            output.contains("https://example.com/domain.context.md"),
+            "external URL should be unchanged"
+        );
     }
 
     #[test]
@@ -255,10 +371,8 @@ mod tests {
         gen.apply_ignores(tmp.path()).unwrap();
         gen.apply_ignores(tmp.path()).unwrap();
 
-        let content = std::fs::read_to_string(
-            tmp.path().join(".claude/settings.local.json"),
-        )
-        .unwrap();
+        let content =
+            std::fs::read_to_string(tmp.path().join(".claude/settings.local.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
         let patterns = parsed["ignorePatterns"].as_array().unwrap();
         let context_count = patterns

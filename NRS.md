@@ -1,6 +1,6 @@
 # NRS
 
-Framework for agentic context and codebase organization. Built on Domain-Driven Design. Every rule below exists to reduce context noise, prevent coupling, and keep agents effective.
+Framework for agentic context and codebase organization. Every rule below exists to reduce context noise, prevent coupling, and keep agents effective.
 
 ## Context Layers
 
@@ -20,6 +20,8 @@ Seven concentric layers, outermost to innermost. Each layer can reference same-l
 ## Root Context as Map
 
 `project.context.md` is the entry point and navigation map. It indexes: project purpose, architecture, domains, documentation (as markdown links to `docs/`), tools, commands, skills, and MCP servers. An agent reading this file knows what exists and where to look.
+
+It MUST include a `## Commands` section listing exact build, test, and lint commands. Tooling commands are the highest-ROI content category in context files — agents use mentioned tools 1.6× more than undocumented ones [23].
 
 ## Context File Rules
 
@@ -51,12 +53,12 @@ The `docs/` directory holds on-demand documentation deeper than context files. A
 - Illustrative code, boilerplates, and pattern snippets are allowed — they teach patterns without creating coupling
 - No hard size limit, but conciseness still matters — loaded docs have the same context degradation effects as any content
 
-## Domain-Driven Thinking
+## Domain Thinking
 
-Clear domain boundaries with business-oriented context are required. Full DDD implementation is strongly recommended but not mandatory — what matters is that every project defines clear domains with business-language context.
+Every codebase has domains — distinct areas of business logic with their own concepts and rules. NRS borrows this concept from Domain-Driven Design: clear boundaries with business-language context. No specific architecture is required.
 
-- Ubiquitous language: one vocabulary shared between product, specs, and code where possible
 - Clear domain boundaries: each domain has a `domain.context.md` in business terms
+- Ubiquitous language: one vocabulary shared between product, specs, and code where possible
 - Domain context written by or with product, not developers alone
 - Code structure reflects domain boundaries
 
@@ -81,8 +83,9 @@ Chained dependency system — each step depends on the previous completing.
 ## Agent Guidelines
 
 - **Propose first, act after.** Every significant action must be proposed and approved before execution. Present the plan, get confirmation, then work. This minimizes wasted iterations.
-- **Sub-agents over monolithic.** When reasoning across many sources, decompose through sub-agents that each process a subset and produce a formalized analysis.
+- **Sub-agents over monolithic.** When reasoning across many sources, decompose through sub-agents that each process a subset and produce a formalized analysis. Use sub-agents for *information gathering* across multiple sources; use single-agent for *implementation* tasks requiring consistent decision-making. Avoid parallel sub-agents for tasks with shared state — inter-agent misalignment is a primary multi-agent failure mode [16][19][27].
 - **Context survival.** Use task-based approaches that survive context window compaction.
+- **Output discipline.** When processing verbose tool outputs (test results, build logs, lint reports), extract only actionable information. Do not preserve full traces in working context. Sub-agents already provide this filtering at the architecture level — apply the same principle within a single session [26].
 - **Discovery.** When entering a directory, glob for `*.context.md` to find relevant context.
 
 ## Generated Tool Entry Points

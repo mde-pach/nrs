@@ -1,6 +1,6 @@
 # NRS — Specification
 
-NRS is an opinionated framework for agentic context and codebase organization. It structures how context is layered, referenced, and maintained in a codebase to optimize both human and AI-agent workflows. It is built on Domain-Driven Design principles and enforces strict separation of concerns across context layers.
+NRS is an opinionated framework for agentic context and codebase organization. It structures how context is layered, referenced, and maintained in a codebase to optimize both human and AI-agent workflows. It borrows the concept of domains from Domain-Driven Design — clear boundaries with business-language context — but does not require DDD as an architecture. Every codebase has domains, whether explicitly named or not. NRS enforces strict separation of concerns across context layers.
 
 ## 1. Problem Statement
 
@@ -13,9 +13,10 @@ AI agents operating on codebases suffer from:
 - **Coupling through context** — comments, docs, and references that create invisible dependencies between unrelated concerns. LLM coupling reasoning collapses in noisy, open-ended scenarios with F1 drops exceeding 50%[11].
 - **Poor test discipline** — flaky tests, vibe-based testing, no structured process. 59% of developers encounter flaky tests monthly or more, and ~16% of tests at Google are flaky[13].
 - **Agent choice ambiguity** — when agents propose multiple solutions and the user says "go", agents default to the first option without explicit consent. Agent autonomy must be a deliberate design choice, not an emergent behavior[12].
-- **Unstructured AI usage can hurt** — a 2025 RCT found that AI tools *increased* experienced developer completion time by 19% without structured context[9]. Meanwhile, structured repository-level documentation reduces agent runtime by ~28.6%[5].
+- **Unstructured AI usage can hurt** — a 2025 RCT found that AI tools *increased* experienced developer completion time by 19% on real-world tasks[9]. Meanwhile, structured repository-level documentation reduces agent runtime by ~28.6%[5]. Yet no established standard for structuring context exists — an empirical study of 466 open-source projects found considerable variation and no common content structure[22].
+- **Context collapse** — without deliberate structure, context files lose detail through iterative rewriting and brevity bias[20]. An empirical study of 2,303 context files across 1,925 repositories found that developers emphasize build commands (62.3%) and implementation details (69.9%) but neglect security (14.5%) and performance (14.5%)[21].
 
-NRS addresses these by defining a layered context system, strict reference rules, a DDD-aligned naming discipline, and a chained task workflow.
+NRS addresses these by defining a layered context system, strict reference rules, a consistent naming discipline, and a chained task workflow.
 
 ## 2. Context Layer System
 
@@ -56,7 +57,7 @@ This layered approach is empirically validated: a three-tier documentation archi
 ### Layer 5 — Domain Context
 - **File**: `domain.context.md` co-located in the domain directory
 - **Scope**: Business-oriented context for a specific domain within the project
-- **Content**: Written almost entirely by product. Uses ubiquitous language (DDD). Describes what the domain does in business terms. If natural links exist between domains, they are referenced from a business perspective, never from an implementation one. If a domain context references implementation details, it signals wrong coupling.
+- **Content**: Uses ubiquitous language, written in business terms ideally by or with product. Describes what the domain does in business terms. If natural links exist between domains, they are referenced from a business perspective, never from an implementation one. If a domain context references implementation details, it signals wrong coupling.
 - **Committed**: Yes
 - **Owner**: Product / domain experts, with developer review
 - **Validation**: Linked documents must have their paths verified by CI/precommit hooks
@@ -86,7 +87,13 @@ project/
 ├── corporate.context.md                   # Layer 2 — company-wide guidelines
 ├── team.context.md                        # Layer 3 — team conventions
 ├── project.context.md                             # Layer 4 — project map & architecture
+├── nrs.gaps.md                            # gap reports — agent-reported context issues
 ├── docs/                                  # on-demand documentation
+│   ├── billing/
+│   │   ├── pricing-rules.md               # pricing model and discount logic
+│   │   └── invoice-lifecycle.md           # invoice states and transitions
+│   ├── shipping/
+│   │   └── carrier-selection.md           # carrier routing rules
 │   ├── testing.md                         # test framework, setup, patterns
 │   ├── server-components.md               # rendering strategy
 │   └── ...
@@ -118,6 +125,7 @@ project/
 | 5 — Domain | `domain.context.md` | Domain directory |
 | 6 — Implementation | `implementation.context.md` | Implementation area |
 | — NRS rules | `nrs.context.md` | Project root |
+| — Gap reports | `nrs.gaps.md` | Project root |
 | 7 — Code | Source files | Everywhere |
 
 ### Generated Tool Entry Points
@@ -143,7 +151,8 @@ The `docs/` directory at project root holds detailed, on-demand documentation th
 Docs are:
 - **Referenceable from any context file**: Any `*.context.md` may link to docs with markdown links. A domain context may link to a doc for deeper business process documentation, an implementation context may link to a doc for detailed patterns.
 - **On-demand loaded**: Like cold-memory context, docs are only read when the current task requires them.
-- **Topic-scoped**: Each document covers one topic completely (e.g., testing setup, rendering strategy, deployment). Not organized by layer or domain — organized by what a developer needs to learn.
+- **Folder structure reflects abstractions**: Organize docs into shallow folders that mirror the project's conceptual structure — by domain, by concern, by workflow, whatever the project's natural boundaries are. Agents navigate folders using file-system tools; a meaningful hierarchy makes docs discoverable without scanning a flat list[23].
+- **Topic-scoped**: Each document covers one topic completely. One doc per topic, not one doc per layer.
 - **Subject to the same anti-coupling rules**: Docs describe patterns and knowledge, not file inventories. They must survive refactoring.
 - **Not context files**: Docs are regular markdown files, not `*.context.md`. They don't participate in reference rules or size limits — but they should still be as concise as the topic allows. A doc loaded into agent context has the same degradation effects as any other content[2].
 - **Illustrative code allowed**: Docs may include code examples, boilerplates, and pattern snippets. These are illustrative — they teach a pattern, not reference specific project files — and do not create coupling.
@@ -156,15 +165,15 @@ These are enforceable thresholds derived from empirical research on LLM performa
 
 | File | Max lines | Rationale |
 |---|---|---|
-| `CONTEXT.md` + `corporate.context.md` + `team.context.md` (combined, always-loaded) | ~500 lines | Vasilopoulos's "constitution" kept to ~660 lines for a 108k-line codebase[6]; AGENTS.md files average ~641 words (~80 lines) for best results[16] |
-| `domain.context.md` | ~300 lines | Agent spec sweet spot: 115–1,233 lines, median ~300–700[6]; no correlation found between file size and effectiveness[16] |
+| `CONTEXT.md` + `corporate.context.md` + `team.context.md` (combined, always-loaded) | ~500 lines | Vasilopoulos's "constitution" kept to ~660 lines for a 108k-line codebase[6] |
+| `domain.context.md` | ~300 lines | Agent spec sweet spot: 115–1,233 lines, median ~300–700[6] |
 | `implementation.context.md` | ~300 lines | Same rationale; on-demand loaded, should be focused on its specific concern |
 
-These are upper bounds, not targets. Shorter is better — 4x compression of prompts *improved* accuracy by 21.4%[4]. Human-written minimal context outperforms verbose auto-generated context by 6 percentage points[16].
+These are upper bounds, not targets. Shorter is better — 4x compression of prompts *improved* accuracy by 21.4%[4].
 
 ### Multi-Instance Reasoning Limitation
 
-There is no hard cap on the number of context files loaded simultaneously — every file the task needs must be available. However, LLMs exhibit a fundamental limitation when aggregating information across multiple sources: performance degrades as instance count increases, independently of total context length, and without warning to the user[18]. This degradation is not about noise — it occurs even when all instances are relevant.
+There is no hard cap on the number of context files loaded simultaneously — every file the task needs must be available. However, LLMs exhibit a fundamental limitation when aggregating information across multiple sources: performance degrades as instance count increases, independently of total context length, and without warning to the user[16]. This degradation is not about noise — it occurs even when all instances are relevant.
 
 This has a direct implication for NRS: when a task requires reasoning across many context files simultaneously, it should be decomposed through sub-agents (§9) that each process a subset and produce a formalized analysis, rather than expecting a single agent to aggregate across all sources at once.
 
@@ -179,7 +188,7 @@ In practice, this means each context file should:
 
 ### Density Over Verbosity
 
-Every line in a context file must carry unique, non-duplicative information. Verbose content consistently underperforms concise content across all tested models, with recall drops of 8–27%[19]. Redundancy is not harmless padding — it actively degrades performance.
+Every line in a context file must carry unique, non-duplicative information. The optimization target is not token minimization but **semantic density** — the ratio of meaningful information to total tokens[17]. Tokens carrying high semantic value (descriptive names, business logic, constraints) are investments that reduce downstream reasoning costs. Tokens carrying zero information (boilerplate, ceremony, redundant context) are waste. Critically, compressing high-information tokens is counterproductive: a controlled experiment showed aggressive compression increased total session cost by 67% despite reducing input tokens by 17%, because it shifted interpretive burden to the model's reasoning phase[17].
 
 Context files MUST NOT:
 - Duplicate information already present in code or other context files (28.7% duplication is the norm without discipline[7])
@@ -200,7 +209,7 @@ Context files must be resilient to implementation changes. A context document sh
 
 ### On-Demand Loading
 
-Context files beyond the always-loaded root context MUST be loaded on-demand, only when the current task requires them. This follows the validated three-tier pattern[6]: hot memory (always loaded, small), warm memory (loaded per-domain), cold memory (loaded on explicit need). Significant degradation begins at 3,750–7,500 tokens of irrelevant context[2].
+Context files beyond the always-loaded root context MUST be loaded on-demand, only when the current task requires them. This follows the validated three-tier pattern[6]: hot memory (always loaded, small), domain specialists (invoked per task), cold memory (loaded on explicit need). A large portion of performance degradation occurs within the first 7,000 tokens of added context[2].
 
 ## 4. Reference Rules
 
@@ -212,16 +221,16 @@ These rules prevent invisible coupling between concerns. Research shows that LLM
 
 Violations of these rules are architectural smells and should be caught in review or automated checks.
 
-## 5. Domain-Driven Thinking
+## 5. Domain Thinking
 
-NRS is structured around clear domain boundaries with business-oriented context. Domain-Driven Design is the strongest approach for this and is strongly recommended, but full DDD implementation (aggregates, value objects, domain events) is not a functional requirement. What IS required is that every project defines clear domains with business-language context.
+NRS borrows the concept of domains from Domain-Driven Design: clear boundaries with business-language context. Every codebase has domains — distinct areas of business logic with their own concepts and rules — whether the project follows DDD or not. NRS requires clear domain boundaries, not a specific architecture.
 
 The core value: **unifying spec and code naming**. When a business concept is called "Subscription" in the spec, it should be called `Subscription` in the code. This removes the translation step that developers otherwise perform mentally — a step that is lossy, inconsistent, and invisible.
 
 In NRS this means:
-- **Clear domain boundaries**: Every project must define its domains, each with a `domain.context.md` written in business terms
+- **Clear domain boundaries**: Every project defines its domains, each with a `domain.context.md` written in business terms
 - **Ubiquitous language**: One vocabulary shared between product, specs, and code — as much as the codebase allows
-- **Domain context ownership**: Written by product or in collaboration with product, not by developers alone
+- **Domain context in business terms**: Written by or with product where possible, describing what the domain does, not how it's implemented
 - **Code structure reflects domains**: The codebase navigation should follow domain boundaries where possible
 
 ## 6. Testing Philosophy
@@ -259,7 +268,8 @@ Development follows a chained dependency system that leverages the task system. 
 7. Ensure tests pass
 8. Commit
 9. Check: does NRS context need updating? If yes → update context docs
-10. Run full e2e suite
+10. Report any context gaps encountered during the task
+11. Run full e2e suite
 
 ### Bug Fix Flow
 1. Ticket enablement
@@ -270,7 +280,8 @@ Development follows a chained dependency system that leverages the task system. 
 6. Ensure the test passes
 7. Commit
 8. Check: does NRS context need updating? If yes → update context docs
-9. Run full e2e suite
+9. Report any context gaps encountered during the task
+10. Run full e2e suite
 
 ### Change Feature Flow
 1. Ticket enablement
@@ -278,6 +289,35 @@ Development follows a chained dependency system that leverages the task system. 
 3. Implement the code
 4. Ensure tests pass
 5. Follow commit and doc update steps as above
+6. Report any context gaps encountered during the task
+
+### Gap Reporting
+
+During development, agents discover that their available context is missing information or contains incorrect information. Gap reporting provides a lightweight telemetry mechanism to surface these issues without disrupting the development workflow. Agents do not interact with context files directly — they report gaps in terms of the working directory and what was missing. The mapping from gap to specific context file is a resolution concern, not a reporting concern.
+
+#### Gap Types
+
+| Type | Agent's perspective |
+|---|---|
+| `missing-context` | No context was available for this area at all |
+| `missing-concept` | A business concept was absent from the area's context |
+| `missing-pattern` | An implementation pattern was undocumented |
+| `wrong` | Something in the context didn't match reality |
+
+#### Mechanism
+
+- Gaps are reported via `nrs gap report --type <type> --target <directory> --description "text"`
+- The target is the directory the agent was working in, not a context file
+- Reports are appended to `nrs.gaps.md` at the project root
+- The file is committed to git — gaps are shared state visible to all developers and agents
+- Duplicate reports are intentional: frequency indicates priority
+- There is no resolve command — gaps are removed manually in the same commit that fixes the underlying context
+
+#### When to Report
+
+An agent reports a gap when it needed to read source files beyond those it was modifying in order to understand the working area — its domain concepts, implementation patterns, or architecture. Reading source files to modify them is normal work; reading source files to build a mental model that context should have provided is a gap.
+
+Gaps are reported after task completion, not during. Only report when gaps exist — silence means success.
 
 ## 8. General Principles
 
@@ -291,6 +331,7 @@ Development follows a chained dependency system that leverages the task system. 
 - **No drift from spec**: Automated checks keep implementation aligned with intent
 - **Auto-updated docs**: Documentation updates are part of the workflow, not an afterthought. The most pervasive documentation problems — outdated, incomplete, and inconsistent information — are systematic and categorizable[15]. Automation is the only reliable prevention.
 - **Codebase navigability from higher-level files**: You should not need to read the entire codebase to make a change. The structure is carried by context documents at higher layers. SWE-bench demonstrated that codebase structure and organization are the critical barriers for AI agents tackling real-world issues[10].
+- **Context gap feedback loop**: Agents report missing or incorrect context during development via `nrs gap report`. Frequency of reports signals priority — the most-reported gaps get fixed first. Over time, context files converge toward precisely sufficient coverage driven by real usage, not speculative completeness.
 
 ### Avoid
 - **Loop-block work**: Development should not get stuck in unproductive loops
@@ -301,7 +342,9 @@ Development follows a chained dependency system that leverages the task system. 
 ## 9. Agent-Specific Guidelines
 
 ### Sub-Agent Strategy
-Large codebases produce better results when using intermediary sub-agents to formalize and analyze rather than dumping raw code paths into context. The sub-agent produces a structured analysis; the main agent works from that analysis, not from the code directly. Multi-agent architectures with focused roles outperform monolithic approaches — achieving 96.3% vs 90.2% accuracy while using 60% fewer tokens[8].
+Large codebases produce better results when using intermediary sub-agents to formalize and analyze rather than dumping raw code paths into context. The sub-agent produces a structured analysis; the main agent works from that analysis, not from the code directly. Multi-agent architectures with focused roles outperform monolithic approaches — achieving 96.3% vs 90.2% accuracy while using 60% fewer tokens[8]. Coding agents that organize information in file systems and use tools outperform standard long-context approaches by 17.3% on average, handling corpora up to three trillion tokens[18].
+
+However, multi-agent decomposition is not free of risk. 75.3% of multi-agent failures stem from information degradation during the planning-to-coding handoff — semantically equivalent inputs cause 7.9%–83.3% failure rates when plans are poorly structured[19]. Clear, structured context at each stage directly mitigates this.
 
 ### Context Survival
 The task-based approach is designed to survive context window compaction. Tasks persist across conversation compression, maintaining continuity even when earlier messages are compacted.
@@ -313,12 +356,14 @@ Every significant action must be proposed and approved before execution. This ap
 - Formatters run automatically
 - Gitmoji convention onboarded via precommit
 - Context document path validation via CI/precommit hooks
+- Cross-file duplication detection — warns when content blocks are repeated across context files (28.7% duplication is the norm without discipline[7])
+- Gap file (`nrs.gaps.md`) committed alongside context fixes — CI can surface open gap count as a maintenance signal
 
 ## 10. What NRS is NOT
 
 - **Not a library**: NRS does not ship runtime code. It is a structural and organizational framework.
 - **Not technology-specific**: NRS applies to any codebase, though it may favor certain implementations over others.
-- **Not optional DDD**: You cannot adopt NRS without adopting DDD. The ubiquitous language principle is load-bearing.
+- **Not architecture-specific**: NRS does not require DDD or any specific architecture. It requires clear domain boundaries with business-language context — a concept borrowed from DDD, applicable to any codebase.
 
 ___
 
@@ -337,7 +382,11 @@ ___
 [13]: https://dl.acm.org/doi/10.1145/3476105 (Parry, O. et al. "A Survey of Flaky Tests." ACM TOSEM, 2022.)
 [14]: https://link.springer.com/article/10.1007/s10664-008-9062-z (Nagappan, N. et al. "Realizing Quality Improvement Through Test Driven Development." Empirical Software Engineering, 2008.)
 [15]: https://dl.acm.org/doi/10.1109/ICSE.2019.00122 (Aghajani, E. et al. "Software Documentation Issues Unveiled." ICSE, 2019.)
-[16]: https://arxiv.org/abs/2602.11988 ("Evaluating AGENTS.md." 2026. Average file: ~641 words. Human-written +4%, LLM-generated -2%. No size-effectiveness correlation.)
-[17]: https://arxiv.org/abs/2411.03538 ("Long Context RAG Performance." 2024. Inverted-U curve: retrieval recall saturated at ~13 chunks. Optimal: 3-5 highly relevant documents.)
-[18]: https://arxiv.org/abs/2603.22608 (Chen et al. "Understanding LLM Performance Degradation in Multi-Instance Processing." 2026. Instance count stronger effect than context length.)
-[19]: https://arxiv.org/abs/2411.07858 ("Verbosity != Veracity." 2024. Verbose responses underperform concise across all models. Recall drops 8-27%.)
+[16]: https://arxiv.org/abs/2603.22608 (Chen et al. "Understanding LLM Performance Degradation in Multi-Instance Processing." 2026. Instance count stronger effect than context length.)
+[17]: https://arxiv.org/abs/2604.07502 (Ustynov, D. "Beyond Human-Readable: Rethinking Software Engineering Conventions for the Agentic Development Era." 2026.)
+[18]: https://arxiv.org/abs/2603.20432 (Cao, W. et al. "Coding Agents are Effective Long-Context Processors." 2026.)
+[19]: https://arxiv.org/abs/2510.10460 (Lyu, Z. et al. "Understanding and Bridging the Planner-Coder Gap." 2025.)
+[20]: https://arxiv.org/abs/2510.04618 (Zhang, Q. et al. "Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models." 2025.)
+[21]: https://arxiv.org/abs/2511.12884 (Chatlatanagulchai, W. et al. "Agent READMEs: An Empirical Study of Context Files for Agentic Coding." 2025.)
+[22]: https://arxiv.org/abs/2510.21413 (Mohsenimofidi, S. et al. "Context Engineering for AI Agents in Open-Source Software." 2025.)
+[23]: https://arxiv.org/abs/2603.20432 (Cao, J. et al. "Coding Agents with File-System Tools." 2026.)

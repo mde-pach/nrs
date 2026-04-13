@@ -1,9 +1,14 @@
-pub mod size;
-pub mod source_paths;
+pub mod duplication;
 pub mod generated_drift;
 pub mod links;
+pub mod orphan_docs;
 pub mod references;
+pub mod required_sections;
+pub mod size;
+pub mod source_paths;
 
+use crate::generators::Generator;
+use crate::model::{ContextFile, ContextSet, DirectoryContext};
 use std::path::Path;
 
 /// A single validation finding.
@@ -45,37 +50,84 @@ impl Finding {
     }
 }
 
-/// Run all validation checks and return findings.
-pub fn run_all(root: &Path) -> anyhow::Result<Vec<Finding>> {
-    let contexts = crate::context::discover(root)?;
-    let mut findings = Vec::new();
+/// The scope at which a validator operates.
+pub enum ValidatorScope {
+    /// Called once per context file.
+    PerFile,
+    /// Called once per directory containing context files.
+    PerDirectory,
+    /// Called once with the entire context set.
+    Global,
+}
 
-    for ctx in &contexts {
-        let relative_dir = ctx
-            .dir
-            .strip_prefix(root)
-            .unwrap_or(&ctx.dir)
-            .to_string_lossy()
-            .to_string();
+/// Trait for pluggable validation checks.
+///
+/// Each validator declares its scope and implements the corresponding method.
+/// Adding a new validator requires: create the struct, implement this trait,
+/// add it to `all_validators()`.
+pub trait Validator {
+    #[allow(dead_code)]
+    fn name(&self) -> &str;
+    fn scope(&self) -> ValidatorScope;
 
-        for (name, content) in &ctx.files {
-            let relative = if relative_dir.is_empty() {
-                name.clone()
-            } else {
-                format!("{}/{}", relative_dir, name)
-            };
-
-            findings.extend(size::check(&relative, name, content));
-            findings.extend(source_paths::check(&relative, content));
-            findings.extend(references::check(&relative, name, content));
-        }
-
-        findings.extend(links::check(root, &ctx.dir, &relative_dir, &ctx.files));
+    fn check_file(&self, _file: &ContextFile) -> Vec<Finding> {
+        vec![]
     }
 
-    let generators = crate::generators::all_generators();
-    for gen in &generators {
-        findings.extend(generated_drift::check(root, &contexts, gen.as_ref())?);
+    fn check_directory(&self, _root: &Path, _dir: &DirectoryContext) -> Vec<Finding> {
+        vec![]
+    }
+
+    fn check_all(&self, _ctx: &ContextSet) -> anyhow::Result<Vec<Finding>> {
+        Ok(vec![])
+    }
+}
+
+/// Build the list of all validators.
+///
+/// Generators are passed in so that `generated_drift` can compare output
+/// without the validation module importing the generator registry.
+pub fn all_validators(generators: Vec<Box<dyn Generator>>) -> Vec<Box<dyn Validator>> {
+    let mut validators: Vec<Box<dyn Validator>> = vec![
+        Box::new(size::SizeValidator),
+        Box::new(source_paths::SourcePathsValidator),
+        Box::new(references::ReferencesValidator),
+        Box::new(links::LinksValidator),
+        Box::new(duplication::DuplicationValidator),
+        Box::new(orphan_docs::OrphanDocsValidator),
+        Box::new(required_sections::RequiredSectionsValidator),
+    ];
+
+    for gen in generators {
+        validators.push(Box::new(generated_drift::GeneratedDriftValidator::new(gen)));
+    }
+
+    validators
+}
+
+/// Run all validation checks and return findings.
+pub fn run_all(
+    ctx_set: &ContextSet,
+    validators: &[Box<dyn Validator>],
+) -> anyhow::Result<Vec<Finding>> {
+    let mut findings = Vec::new();
+
+    for validator in validators {
+        match validator.scope() {
+            ValidatorScope::PerFile => {
+                for file in ctx_set.all_files() {
+                    findings.extend(validator.check_file(file));
+                }
+            }
+            ValidatorScope::PerDirectory => {
+                for dir_ctx in &ctx_set.directories {
+                    findings.extend(validator.check_directory(&ctx_set.root, dir_ctx));
+                }
+            }
+            ValidatorScope::Global => {
+                findings.extend(validator.check_all(ctx_set)?);
+            }
+        }
     }
 
     Ok(findings)

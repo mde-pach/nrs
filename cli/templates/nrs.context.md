@@ -1,48 +1,50 @@
 # NRS Context
 
-This project uses NRS for context organization and development workflow.
+NRS (Nested Reference System) provides structured context to guide AI agents working in this codebase.
 
-## Context Discovery
+## Gap Reporting
 
-When entering a new directory, glob for `*.context.md`. Read relevant context before making changes.
+After completing a task, if you needed to read source files beyond those you modified to understand the working area — its domain concepts, implementation patterns, or architecture — report each gap:
 
-## Writing and Editing Context
+    nrs gap report --type <type> --target <directory> --description "what's missing or wrong"
 
-- No source file paths — no references to specific files or directories
-- `domain.context.md` is business language — no types, no code, no framework names
-- `implementation.context.md` describes patterns — not file listings
-- Same-level contexts may reference each other to state facts, but must not delegate understanding
-- Docs (`docs/`) may be referenced from any context file with markdown links, not just project level
-- Concise and dense — every line must earn its place. No duplication across files.
-- Refactoring test: would a code refactor (without behavior change) break this line? If yes → it belongs in code
+Target is the directory you were working in, not a specific file. Types:
+- `missing-context` — no context was available for this area at all
+- `missing-concept` — a business concept was absent from the area's context
+- `missing-pattern` — an implementation pattern was undocumented
+- `wrong` — something in the context contradicts reality
 
-## Context Updates
-
-Update context when business concepts, patterns, or domain rules change. Do not update for refactoring, renaming, or adding files.
+Report only — never modify context as part of gap reporting.
 
 ## Propose First, Act After
 
-Every significant action must be proposed and approved before execution. This includes implementation plans, architectural decisions, and approach choices. Do not start work without explicit user alignment. This minimizes wasted iterations and ensures the user stays in control of direction.
+Every significant action — implementation plans, architectural decisions, approach choices — must be proposed and approved before execution.
 
 ## Testing
 
-- Test-driven bug fixing: write a failing test first, then fix
-- Integration and e2e over unit tests — hit real infrastructure, mocks hide real issues
-- Tests must be deterministic — if intermittent, increase input volume until reliably captured
-- If there is no test, the spec is unverified
+Context defines the spec. Tests verify it. No test means the spec is unverified.
 
-## Writing Standards
-
-- Concise — short statements over verbose explanations
-- Non-repetitive — never duplicate what exists elsewhere
-- No speculative examples — state rules and facts only
-- Inline docs explain *why*, not *what*
+- Write a failing test before fixing any bug
+- Tests must be deterministic — if an issue occurs 1 in 10,000 times, run 10,000+ entries
+- Prefer real implementations over test doubles — mocks assert how code calls a dependency, not whether the system works
+- Test-double hierarchy: real → fake → stub → spy → mock (last resort)
+- Integration and e2e over unit tests — hit real infrastructure
 
 ## Sub-Agent Strategy
 
-For multi-file or multi-domain analysis, use sub-agents with focused subsets rather than loading everything into one context.
+When a task touches more than one domain or requires reading more than 5 files to understand the area, use sub-agents.
+
+- Each sub-agent is scoped to one domain, one file group, or one analysis question
+- Sub-agents produce structured analyses — the main agent works from analyses, never from raw code
+- The main agent's context is for decision-making and synthesis, not data processing
+- Use sub-agents for *information gathering* across multiple sources; use single-agent for *implementation* tasks requiring consistent decision-making
+- Avoid parallel sub-agents for tasks with shared state — inter-agent misalignment is a primary multi-agent failure mode
+
+## Output Discipline
+
+When processing verbose tool outputs (test results, build logs, lint reports), extract only actionable information. Do not preserve full traces in working context. Sub-agents already provide this filtering at the architecture level — apply the same principle within a single session.
 
 ## Commands
 
-- `nrs generate all` — regenerate tool entry points from context
-- `nrs validate` — check context files for violations
+- `nrs gap report` — report a context gap
+- `nrs gap summary` — view reported gaps grouped by target

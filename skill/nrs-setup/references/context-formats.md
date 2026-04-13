@@ -45,7 +45,7 @@ Acts as the project map. Must contain markdown links to docs.
 
 - [{Topic}](docs/{file}.md) — {description}
 
-## Tools
+## Commands
 
 - `{command}` — {description}
 ```

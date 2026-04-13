@@ -1,48 +1,59 @@
-use super::Finding;
-use std::collections::BTreeMap;
+use crate::markdown;
+use crate::model::DirectoryContext;
+
+use super::{Finding, Validator, ValidatorScope};
 use std::path::Path;
 
-/// Check that markdown links in project.context.md (the map) resolve to existing files.
-pub fn check(
-    root: &Path,
-    dir: &Path,
-    relative_dir: &str,
-    files: &BTreeMap<String, String>,
-) -> Vec<Finding> {
+pub struct LinksValidator;
+
+impl Validator for LinksValidator {
+    fn name(&self) -> &str {
+        "links"
+    }
+
+    fn scope(&self) -> ValidatorScope {
+        ValidatorScope::PerDirectory
+    }
+
+    fn check_directory(&self, root: &Path, dir_ctx: &DirectoryContext) -> Vec<Finding> {
+        check(root, dir_ctx)
+    }
+}
+
+/// Check that markdown links in context files resolve to existing files.
+fn check(root: &Path, dir_ctx: &DirectoryContext) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    let Some(content) = files.get("project.context.md") else {
-        return findings;
-    };
+    for file in &dir_ctx.files {
+        for (i, line) in file.content.lines().enumerate() {
+            let line_num = i + 1;
 
-    let relative_path = if relative_dir.is_empty() {
-        "project.context.md".to_string()
-    } else {
-        format!("{}/project.context.md", relative_dir)
-    };
+            for link_target in markdown::extract_md_links(line) {
+                if link_target.starts_with("http://") || link_target.starts_with("https://") {
+                    continue;
+                }
+                if link_target.starts_with('#') {
+                    continue;
+                }
+                // Context file links are valid — they get rewritten by generate.
+                if link_target.ends_with(".context.md") {
+                    continue;
+                }
+                // Only validate documentation links (.md files). Source file
+                // links are the source_paths validator's concern.
+                if !link_target.ends_with(".md") {
+                    continue;
+                }
 
-    for (i, line) in content.lines().enumerate() {
-        let line_num = i + 1;
-
-        for link_target in extract_md_links(line) {
-            // Skip external URLs
-            if link_target.starts_with("http://") || link_target.starts_with("https://") {
-                continue;
-            }
-            // Skip anchors
-            if link_target.starts_with('#') {
-                continue;
-            }
-
-            let target_path = dir.join(link_target);
-            if !target_path.exists() {
-                // Also check relative to root
-                let from_root = root.join(link_target);
-                if !from_root.exists() {
-                    findings.push(Finding::error(
-                        &relative_path,
-                        format!("line {}: broken link: {}", line_num, link_target),
-                    ));
+                let target_path = dir_ctx.dir.join(link_target);
+                if !target_path.exists() {
+                    let from_root = root.join(link_target);
+                    if !from_root.exists() {
+                        findings.push(Finding::error(
+                            &file.relative_path,
+                            format!("line {}: broken link: {}", line_num, link_target),
+                        ));
+                    }
                 }
             }
         }
@@ -51,32 +62,30 @@ pub fn check(
     findings
 }
 
-/// Extract markdown link targets: \[text\](target)
-fn extract_md_links(line: &str) -> Vec<&str> {
-    let mut links = Vec::new();
-    let mut rest = line;
-
-    while let Some(pos) = rest.find("](") {
-        rest = &rest[pos + 2..];
-        if let Some(end) = rest.find(')') {
-            let target = &rest[..end];
-            if !target.is_empty() {
-                links.push(target);
-            }
-            rest = &rest[end + 1..];
-        } else {
-            break;
-        }
-    }
-
-    links
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{ContextFile, Layer};
     use crate::validate::FindingKind;
+    use std::path::PathBuf;
     use tempfile::TempDir;
+
+    fn make_dir_ctx(dir: PathBuf, files: Vec<(&str, &str)>) -> DirectoryContext {
+        let ctx_files = files
+            .into_iter()
+            .map(|(name, content)| ContextFile {
+                relative_path: name.to_string(),
+                filename: name.to_string(),
+                layer: Layer::from_filename(name),
+                content: content.to_string(),
+            })
+            .collect();
+        DirectoryContext {
+            dir,
+            relative_dir: String::new(),
+            files: ctx_files,
+        }
+    }
 
     #[test]
     fn valid_link_passes() {
@@ -85,13 +94,12 @@ mod tests {
         std::fs::create_dir_all(&docs_dir).unwrap();
         std::fs::write(docs_dir.join("testing.md"), "# Testing").unwrap();
 
-        let mut files = BTreeMap::new();
-        files.insert(
-            "project.context.md".to_string(),
-            "- [Testing](docs/testing.md)".to_string(),
+        let dir_ctx = make_dir_ctx(
+            tmp.path().to_path_buf(),
+            vec![("project.context.md", "- [Testing](docs/testing.md)")],
         );
 
-        let findings = check(tmp.path(), tmp.path(), "", &files);
+        let findings = check(tmp.path(), &dir_ctx);
         assert!(findings.is_empty());
     }
 
@@ -99,13 +107,12 @@ mod tests {
     fn broken_link_is_error() {
         let tmp = TempDir::new().unwrap();
 
-        let mut files = BTreeMap::new();
-        files.insert(
-            "project.context.md".to_string(),
-            "- [Testing](docs/testing.md)".to_string(),
+        let dir_ctx = make_dir_ctx(
+            tmp.path().to_path_buf(),
+            vec![("project.context.md", "- [Testing](docs/testing.md)")],
         );
 
-        let findings = check(tmp.path(), tmp.path(), "", &files);
+        let findings = check(tmp.path(), &dir_ctx);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, FindingKind::Error);
         assert!(findings[0].message.contains("docs/testing.md"));
@@ -115,13 +122,12 @@ mod tests {
     fn external_urls_skipped() {
         let tmp = TempDir::new().unwrap();
 
-        let mut files = BTreeMap::new();
-        files.insert(
-            "project.context.md".to_string(),
-            "- [Docs](https://example.com)".to_string(),
+        let dir_ctx = make_dir_ctx(
+            tmp.path().to_path_buf(),
+            vec![("project.context.md", "- [Docs](https://example.com)")],
         );
 
-        let findings = check(tmp.path(), tmp.path(), "", &files);
+        let findings = check(tmp.path(), &dir_ctx);
         assert!(findings.is_empty());
     }
 
@@ -129,37 +135,70 @@ mod tests {
     fn anchors_skipped() {
         let tmp = TempDir::new().unwrap();
 
-        let mut files = BTreeMap::new();
-        files.insert(
-            "project.context.md".to_string(),
-            "- [Section](#architecture)".to_string(),
+        let dir_ctx = make_dir_ctx(
+            tmp.path().to_path_buf(),
+            vec![("project.context.md", "- [Section](#architecture)")],
         );
 
-        let findings = check(tmp.path(), tmp.path(), "", &files);
+        let findings = check(tmp.path(), &dir_ctx);
         assert!(findings.is_empty());
     }
 
     #[test]
-    fn only_checks_project_context() {
+    fn checks_domain_context_links() {
         let tmp = TempDir::new().unwrap();
 
-        let mut files = BTreeMap::new();
-        files.insert(
-            "domain.context.md".to_string(),
-            "- [Broken](nonexistent.md)".to_string(),
+        let dir_ctx = make_dir_ctx(
+            tmp.path().to_path_buf(),
+            vec![("domain.context.md", "- [Broken](nonexistent.md)")],
         );
 
-        let findings = check(tmp.path(), tmp.path(), "", &files);
+        let findings = check(tmp.path(), &dir_ctx);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, FindingKind::Error);
+        assert!(findings[0].message.contains("nonexistent.md"));
+    }
+
+    #[test]
+    fn checks_implementation_context_links() {
+        let tmp = TempDir::new().unwrap();
+
+        let dir_ctx = make_dir_ctx(
+            tmp.path().to_path_buf(),
+            vec![("implementation.context.md", "- [Missing](docs/arch.md)")],
+        );
+
+        let findings = check(tmp.path(), &dir_ctx);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].message.contains("docs/arch.md"));
+    }
+
+    #[test]
+    fn valid_link_in_domain_context_passes() {
+        let tmp = TempDir::new().unwrap();
+        let docs_dir = tmp.path().join("docs");
+        std::fs::create_dir_all(&docs_dir).unwrap();
+        std::fs::write(docs_dir.join("billing.md"), "# Billing").unwrap();
+
+        let dir_ctx = make_dir_ctx(
+            tmp.path().to_path_buf(),
+            vec![("domain.context.md", "- [Billing](docs/billing.md)")],
+        );
+
+        let findings = check(tmp.path(), &dir_ctx);
         assert!(findings.is_empty());
     }
 
     #[test]
-    fn extract_md_links_works() {
-        assert_eq!(
-            extract_md_links("- [A](foo.md) and [B](bar.md)"),
-            vec!["foo.md", "bar.md"]
+    fn checks_custom_context_links() {
+        let tmp = TempDir::new().unwrap();
+
+        let dir_ctx = make_dir_ctx(
+            tmp.path().to_path_buf(),
+            vec![("custom.context.md", "- [Gone](gone.md)")],
         );
-        assert!(extract_md_links("no links here").is_empty());
-        assert_eq!(extract_md_links("[text](target)"), vec!["target"]);
+
+        let findings = check(tmp.path(), &dir_ctx);
+        assert_eq!(findings.len(), 1);
     }
 }

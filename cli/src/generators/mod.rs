@@ -1,6 +1,7 @@
 pub mod claude;
 
-use crate::context::DirectoryContext;
+use crate::markdown;
+use crate::model::{ContextSet, DirectoryContext};
 use std::path::Path;
 
 pub trait Generator {
@@ -8,17 +9,28 @@ pub trait Generator {
     fn output_filename(&self) -> &str;
     fn generate(&self, ctx: &DirectoryContext) -> String;
 
-    /// Glob patterns the target tool should ignore (to avoid reading both
-    /// the generated file and the source context files).
-    fn ignore_patterns(&self) -> Vec<&str> {
-        vec![]
-    }
-
     /// Apply ignore patterns to the tool's configuration at the project root.
     /// Each generator knows its tool's config format.
     fn apply_ignores(&self, _project_root: &Path) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+/// Generate content and rewrite `*.context.md` links to point to the
+/// compiled output file (e.g. `CLAUDE.md#anchor`).
+pub fn generate_and_rewrite(
+    gen: &dyn Generator,
+    dir_ctx: &DirectoryContext,
+    ctx_set: &ContextSet,
+) -> String {
+    let raw = gen.generate(dir_ctx);
+    markdown::rewrite_context_links(
+        &raw,
+        &dir_ctx.files,
+        ctx_set,
+        &dir_ctx.dir,
+        gen.output_filename(),
+    )
 }
 
 pub fn all_generators() -> Vec<Box<dyn Generator>> {

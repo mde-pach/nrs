@@ -38,16 +38,44 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Any `*.context.md` may link to `docs/` files with markdown links. A domain context can link to a business process doc, an implementation context can link to a patterns guide.
 
+Organize `docs/` into shallow folders that mirror the project's abstractions — by domain, by concern, by workflow, whatever the natural boundaries are. Agents navigate folders using file-system tools; a meaningful hierarchy makes docs discoverable without scanning a flat list.
+
+```
+docs/
+  billing/
+    pricing-rules.md
+    invoice-lifecycle.md
+  shipping/
+    carrier-selection.md
+  testing.md
+  server-components.md
+```
+
 ## Domain-Driven Thinking
 
 Every domain needs a `domain.context.md` written in business terms, with vocabulary shared between product and code. Full DDD is recommended but not mandatory.
 
 ## Testing
 
+Context defines the spec. Tests verify it. No test means the spec is unverified.
+
 - **Test-driven bug fixing**: write a failing test first, invest in it, then fix
-- **Integration and e2e over unit**: hit real infrastructure — mocks hide real issues
 - **Deterministic tests**: if intermittent, increase input volume until reliably captured
-- **No test = unverified spec**
+- **Real over mocks**: mocks assert how code calls a dependency, not whether the system works
+- **Test-double hierarchy**: real → fake → stub → spy → mock (last resort)
+- **Integration and e2e over unit**: hit real infrastructure
+
+### Test-Double Strategy
+
+AI agents default to mocks 95% of the time. Prefer test doubles that preserve real behavior.
+
+| Type | When to use | When to avoid |
+|---|---|---|
+| **Real implementation** | Default choice — database, filesystem, HTTP server | External services with rate limits or non-determinism |
+| **Fake** | In-memory replacement with real behavior (e.g. SQLite for Postgres) | When the fake diverges from production behavior |
+| **Stub** | Fixed return values for a dependency you don't control | When the return value matters to correctness |
+| **Spy** | Verify a side effect happened (email sent, event published) | When you can assert on the outcome instead |
+| **Mock** | Last resort — complex protocol verification | Almost everywhere else |
 
 ## Propose First
 

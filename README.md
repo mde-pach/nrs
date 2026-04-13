@@ -2,11 +2,11 @@
 
 An opinionated framework for agentic context and codebase organization. NRS structures how context is layered, referenced, and maintained to optimize both human and AI-agent workflows.
 
-Built on Domain-Driven Design. Backed by [academic research](SPEC.md#references).
+Backed by [academic research](SPEC.md#references).
 
 ## Why
 
-AI coding agents perform worse — not better — without structured context. Unstructured AI usage increased experienced developer completion time by 19%[9], while structured repository documentation reduced agent runtime by 28.6%[5]. Context length alone degrades LLM performance by 13.9–85%[2], and irrelevant context actively harms reasoning[3].
+AI coding agents perform worse — not better — without structured context. A 2025 RCT found that AI tools increased experienced developer completion time by 19% on real-world tasks[9], while structured repository documentation reduced agent runtime by 28.6%[5]. Context length alone degrades LLM performance by 13.9–85%[2], and irrelevant context actively harms reasoning[3].
 
 NRS solves this by defining:
 - **What context exists** — a 7-layer system from developer preferences to inline code

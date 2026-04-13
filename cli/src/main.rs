@@ -1,9 +1,11 @@
-mod context;
+mod commands;
+mod discovery;
 mod generators;
-mod install;
+mod markdown;
+mod model;
 mod validate;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -30,6 +32,10 @@ enum Command {
         /// Project root directory
         #[arg(long, default_value = ".")]
         dir: PathBuf,
+
+        /// Treat warnings as errors (exit code 1)
+        #[arg(long)]
+        strict: bool,
     },
     /// Initialize NRS precommit hooks in the project
     Init {
@@ -41,6 +47,39 @@ enum Command {
     Install {
         /// Target tool (e.g., claude, all)
         target: String,
+    },
+    /// Report and view context gaps
+    Gap {
+        #[command(subcommand)]
+        action: GapAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum GapAction {
+    /// Report a context gap
+    Report {
+        /// Gap type: missing-context, missing-concept, missing-pattern, wrong
+        #[arg(long, value_name = "TYPE")]
+        r#type: String,
+
+        /// Target path (file or directory the gap relates to)
+        #[arg(long)]
+        target: String,
+
+        /// Description of the gap
+        #[arg(long)]
+        description: String,
+
+        /// Project root directory
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
+    /// Display gap summary grouped by target
+    Summary {
+        /// Project root directory
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
     },
 }
 
@@ -55,163 +94,18 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Generate { target, dir } => run_generate(&target, &dir),
-        Command::Validate { dir } => run_validate(&dir),
-        Command::Init { dir } => run_init(&dir),
-        Command::Install { target } => install::run(&target),
+        Command::Generate { target, dir } => commands::generate::run(&target, &dir),
+        Command::Validate { dir, strict } => commands::validate::run(&dir, strict),
+        Command::Init { dir } => commands::init::run(&dir),
+        Command::Install { target } => commands::install::run(&target),
+        Command::Gap { action } => match action {
+            GapAction::Report {
+                r#type,
+                target,
+                description,
+                dir,
+            } => commands::gap::run_report(&dir, &r#type, &target, &description),
+            GapAction::Summary { dir } => commands::gap::run_summary(&dir),
+        },
     }
-}
-
-fn run_generate(target: &str, dir: &PathBuf) -> Result<()> {
-    let dir = dir
-        .canonicalize()
-        .with_context(|| format!("directory not found: {}", dir.display()))?;
-
-    let all_generators = generators::all_generators();
-
-    let targets: Vec<&dyn generators::Generator> = if target == "all" {
-        all_generators.iter().map(|g| g.as_ref()).collect()
-    } else {
-        let gen = all_generators
-            .iter()
-            .find(|g| g.name() == target)
-            .ok_or_else(|| {
-                let available: Vec<&str> = all_generators.iter().map(|g| g.name()).collect();
-                anyhow::anyhow!(
-                    "unknown generator '{}'. available: {}",
-                    target,
-                    available.join(", ")
-                )
-            })?;
-        vec![gen.as_ref()]
-    };
-
-    let contexts = context::discover(&dir)?;
-
-    if contexts.is_empty() {
-        println!("no context files found");
-        return Ok(());
-    }
-
-    for ctx in &contexts {
-        for gen in &targets {
-            let content = gen.generate(ctx);
-            let output_path = ctx.dir.join(gen.output_filename());
-            std::fs::write(&output_path, &content)
-                .with_context(|| format!("failed to write {}", output_path.display()))?;
-
-            let relative = output_path.strip_prefix(&dir).unwrap_or(&output_path);
-            println!("wrote {}", relative.display());
-        }
-    }
-
-    for gen in &targets {
-        gen.apply_ignores(&dir)?;
-    }
-
-    Ok(())
-}
-
-fn run_validate(dir: &PathBuf) -> Result<()> {
-    let dir = dir
-        .canonicalize()
-        .with_context(|| format!("directory not found: {}", dir.display()))?;
-
-    let findings = validate::run_all(&dir)?;
-
-    if findings.is_empty() {
-        println!("ok");
-        return Ok(());
-    }
-
-    let mut has_errors = false;
-    for f in &findings {
-        println!("{}", f.display());
-        if f.kind == validate::FindingKind::Error {
-            has_errors = true;
-        }
-    }
-
-    let warnings = findings
-        .iter()
-        .filter(|f| f.kind == validate::FindingKind::Warning)
-        .count();
-    let errors = findings
-        .iter()
-        .filter(|f| f.kind == validate::FindingKind::Error)
-        .count();
-
-    println!();
-    if errors > 0 {
-        println!("{} error(s), {} warning(s)", errors, warnings);
-    } else {
-        println!("{} warning(s)", warnings);
-    }
-
-    if has_errors {
-        std::process::exit(1);
-    }
-
-    Ok(())
-}
-
-const NRS_CONTEXT: &str = include_str!("../templates/nrs.context.md");
-
-fn run_init(dir: &PathBuf) -> Result<()> {
-    let dir = dir
-        .canonicalize()
-        .with_context(|| format!("directory not found: {}", dir.display()))?;
-
-    // Create nrs.context.md if it doesn't exist
-    let nrs_context_path = dir.join("nrs.context.md");
-    if !nrs_context_path.exists() {
-        std::fs::write(&nrs_context_path, NRS_CONTEXT)?;
-        println!("created nrs.context.md");
-    } else {
-        println!("nrs.context.md already exists");
-    }
-
-    let hook_path = dir.join(".git/hooks/pre-commit");
-
-    // Check if git repo
-    if !dir.join(".git").exists() {
-        anyhow::bail!("not a git repository: {}", dir.display());
-    }
-
-    let hook_content = r#"#!/bin/sh
-# NRS pre-commit hook — generated by `nrs init`
-
-# Generate tool entry points
-nrs generate all
-
-# Validate context files
-nrs validate
-
-# Stage any generated files
-git add -u
-"#;
-
-    if hook_path.exists() {
-        let existing = std::fs::read_to_string(&hook_path)?;
-        if existing.contains("nrs generate") {
-            println!("pre-commit hook already contains NRS commands");
-            return Ok(());
-        }
-        // Append to existing hook
-        let mut content = existing;
-        content.push_str("\n# NRS pre-commit hook — appended by `nrs init`\nnrs generate all\nnrs validate\ngit add -u\n");
-        std::fs::write(&hook_path, content)?;
-        println!("appended NRS commands to existing pre-commit hook");
-    } else {
-        std::fs::create_dir_all(dir.join(".git/hooks"))?;
-        std::fs::write(&hook_path, hook_content)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&hook_path, std::fs::Permissions::from_mode(0o755))?;
-        }
-        println!("created pre-commit hook at .git/hooks/pre-commit");
-    }
-
-    Ok(())
 }
