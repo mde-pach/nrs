@@ -1,48 +1,41 @@
 # NRS Context
 
-This project uses NRS for context organization and development workflow.
-
-## Context Discovery
-
-When entering a new directory, glob for `*.context.md`. Read relevant context before making changes.
-
-## Writing and Editing Context
-
-- No source file paths — no references to specific files or directories
-- `domain.context.md` is business language — no types, no code, no framework names
-- `implementation.context.md` describes patterns — not file listings
-- Same-level contexts may reference each other to state facts, but must not delegate understanding
-- Docs (`docs/`) may be referenced from any context file with markdown links, not just project level
-- Concise and dense — every line must earn its place. No duplication across files.
-- Refactoring test: would a code refactor (without behavior change) break this line? If yes → it belongs in code
-
-## Context Updates
-
-Update context when business concepts, patterns, or domain rules change. Do not update for refactoring, renaming, or adding files.
+Baseline agent behavior for every project using NRS. Lower-layer context (corporate, team, project, domain, implementation) takes precedence when it conflicts with these defaults.
 
 ## Propose First, Act After
 
-Every significant action must be proposed and approved before execution. This includes implementation plans, architectural decisions, and approach choices. Do not start work without explicit user alignment. This minimizes wasted iterations and ensures the user stays in control of direction.
+State the plan, wait for alignment, then execute. Non-trivial work never starts without explicit go-ahead. Cheap to confirm, expensive to undo.
+
+## Evidence Over Assumption
+
+Read a file before proposing changes to it. Verify with `git`, tests, or the code itself before acting on memory. If memory and current state disagree, trust what you observe now.
+
+## Root Cause Over Workaround
+
+Diagnose why something fails before trying alternatives. Do not bypass failing checks (`--no-verify`, ignored errors, disabled tests) as a shortcut.
+
+## Scope Discipline
+
+Do what was asked. No unsolicited refactors, docstrings, extra validation, or speculative abstractions. Three similar lines beats a premature helper.
 
 ## Testing
 
-- Test-driven bug fixing: write a failing test first, then fix
-- Integration and e2e over unit tests — hit real infrastructure, mocks hide real issues
-- Tests must be deterministic — if intermittent, increase input volume until reliably captured
-- If there is no test, the spec is unverified
+- Bug fix starts with a failing test that reproduces the bug
+- Integration and e2e over unit tests — mocks hide the bugs that matter
+- Tests must be deterministic — if flaky, raise input volume until it isn't
 
-## Writing Standards
+## Sub-Agents
 
-- Concise — short statements over verbose explanations
-- Non-repetitive — never duplicate what exists elsewhere
-- No speculative examples — state rules and facts only
-- Inline docs explain *why*, not *what*
+For multi-domain analysis or reads spanning more than a handful of files, delegate to a sub-agent with a focused brief. The sub-agent produces a structured analysis; the main agent works from that analysis, not from raw code.
 
-## Sub-Agent Strategy
+- One domain, one file group, or one analysis question per sub-agent
+- Use for information gathering; stay single-agent for implementation requiring consistent decisions
+- Avoid parallel sub-agents on shared state — misalignment is a primary multi-agent failure mode
 
-For multi-file or multi-domain analysis, use sub-agents with focused subsets rather than loading everything into one context.
+## Output Discipline
 
-## Commands
+When processing verbose tool output (test results, build logs, lint reports), extract only actionable information. Do not carry full traces forward.
 
-- `nrs generate all` — regenerate tool entry points from context
-- `nrs validate` — check context files for violations
+## Gap Reporting
+
+Report context gaps via `nrs gap report` after completing a task. Never block on them — silence means success.

@@ -1,56 +1,41 @@
 # NRS Context
 
-NRS (Nested Reference System) provides structured context to guide AI agents working in this codebase.
-
-## Gap Reporting
-
-After completing a task, if you needed to read source files beyond those you modified to understand the working area — its domain concepts, implementation patterns, or architecture — run `nrs gap report` autonomously. Do not ask for approval.
-
-    nrs gap report --type <type> --target <directory> --description "what's missing or wrong"
-
-Target is the directory you were working in, not a specific file. Types:
-- `missing-context` — no context was available for this area at all
-- `missing-concept` — a business concept was absent from the area's context
-- `missing-pattern` — an implementation pattern was undocumented
-- `wrong` — something in the context contradicts reality
-
-Report only — never modify context as part of gap reporting.
+Baseline agent behavior for every project using NRS. Lower-layer context (corporate, team, project, domain, implementation) takes precedence when it conflicts with these defaults.
 
 ## Propose First, Act After
 
-Every significant action — implementation plans, architectural decisions, approach choices — must be proposed and approved before execution.
+State the plan, wait for alignment, then execute. Non-trivial work never starts without explicit go-ahead. Cheap to confirm, expensive to undo.
+
+## Evidence Over Assumption
+
+Read a file before proposing changes to it. Verify with `git`, tests, or the code itself before acting on memory. If memory and current state disagree, trust what you observe now.
+
+## Root Cause Over Workaround
+
+Diagnose why something fails before trying alternatives. Do not bypass failing checks (`--no-verify`, ignored errors, disabled tests) as a shortcut.
+
+## Scope Discipline
+
+Do what was asked. No unsolicited refactors, docstrings, extra validation, or speculative abstractions. Three similar lines beats a premature helper.
 
 ## Testing
 
-Context defines the spec. Tests verify it. No test means the spec is unverified.
+- Bug fix starts with a failing test that reproduces the bug
+- Integration and e2e over unit tests — mocks hide the bugs that matter
+- Tests must be deterministic — if flaky, raise input volume until it isn't
 
-- Write a failing test before fixing any bug
-- Tests must be deterministic — if an issue occurs 1 in 10,000 times, run 10,000+ entries
-- Prefer real implementations over test doubles — mocks assert how code calls a dependency, not whether the system works
-- Test-double hierarchy: real → fake → stub → spy → mock (last resort)
-- Integration and e2e over unit tests — hit real infrastructure
+## Sub-Agents
 
-## Sub-Agent Strategy
+For multi-domain analysis or reads spanning more than a handful of files, delegate to a sub-agent with a focused brief. The sub-agent produces a structured analysis; the main agent works from that analysis, not from raw code.
 
-When a task touches more than one domain or requires reading more than 5 files to understand the area, use sub-agents.
-
-- Each sub-agent is scoped to one domain, one file group, or one analysis question
-- Sub-agents produce structured analyses — the main agent works from analyses, never from raw code
-- The main agent's context is for decision-making and synthesis, not data processing
-- Use sub-agents for *information gathering* across multiple sources; use single-agent for *implementation* tasks requiring consistent decision-making
-- Avoid parallel sub-agents for tasks with shared state — inter-agent misalignment is a primary multi-agent failure mode
+- One domain, one file group, or one analysis question per sub-agent
+- Use for information gathering; stay single-agent for implementation requiring consistent decisions
+- Avoid parallel sub-agents on shared state — misalignment is a primary multi-agent failure mode
 
 ## Output Discipline
 
-When processing verbose tool outputs (test results, build logs, lint reports), extract only actionable information. Do not preserve full traces in working context. Sub-agents already provide this filtering at the architecture level — apply the same principle within a single session.
+When processing verbose tool output (test results, build logs, lint reports), extract only actionable information. Do not carry full traces forward.
 
-## Signals
+## Gap Reporting
 
-NRS hooks observe agent behavior and automatically report context gaps. Gaps from signals appear in `nrs.gaps.md` with source `observed:<pattern>`. Manual gap reporting continues to work alongside automated signals.
-
-Hook lifecycle: SessionStart (gap + validation briefing) → SubagentStart (layer orientation) → PreToolUse (guard generated files) → SubagentStop/SessionEnd (observe transcript) → TaskCompleted (notify about gaps) → PreCompact/PostCompact (forward layer paths) → FileChanged (sync generated output).
-
-## Commands
-
-- `nrs gap report` — report a context gap
-- `nrs gap summary` — view reported gaps grouped by target
+Report context gaps via `nrs gap report` after completing a task. Never block on them — silence means success.
