@@ -59,7 +59,7 @@ Do not proceed until the user confirms. A wrong assumption here will propagate i
 nrs init
 ```
 
-Creates `nrs.context.md` (agent operating rules) and the precommit hook. This is a standard template — no customization needed. Confirm to the user what was created and move on.
+Creates `nrs.context.md` (baseline agent behavior) and the precommit hook. This is a standard template — no customization needed. Confirm to the user what was created and move on.
 
 ### Phase 2 — Project Context (`project.context.md`)
 

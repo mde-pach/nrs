@@ -4,7 +4,7 @@
 
 | File | Layer | Location |
 |---|---|---|
-| `nrs.context.md` | NRS rules | Project root |
+| `nrs.context.md` | Baseline agent behavior | Project root |
 | `corporate.context.md` | Corporate | Project root |
 | `team.context.md` | Team | Project root |
 | `project.context.md` | Project map | Project root |
