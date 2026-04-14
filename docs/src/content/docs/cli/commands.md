@@ -13,9 +13,9 @@ nrs generate all          # all registered generators
 nrs generate claude --dir /path/to/project
 ```
 
-| Target | Output | Ignore config |
-|---|---|---|
-| `claude` | `CLAUDE.md` | `.claude/settings.local.json` |
+| Target | Output | Ignore config | Hooks |
+|---|---|---|---|
+| `claude` | `CLAUDE.md` | `.claude/settings.local.json` | `.claude/settings.json` (9 hooks — see [Hooks](#hooks)) |
 
 Ordering: nrs → corporate → team → project → domain → implementation.
 
@@ -83,13 +83,98 @@ nrs gap report --type missing-concept --target src/billing/ --description "invoi
 
 Duplicates are kept — frequency signals priority. Gaps are removed manually when the underlying context is fixed.
 
+The gap file uses a 5-column format: `Type | Target | Description | Source | Confidence`. Manual reports use `source: manual`. Automated signals use `source: observed:<pattern>`.
+
 ---
 
 ## `nrs gap summary`
 
-Reads `nrs.gaps.md` and displays gaps grouped by target.
+Reads `nrs.gaps.md` and displays gaps grouped by target. Observed gaps show their source pattern.
 
 ```bash
 nrs gap summary
 nrs gap summary --dir /path/to/project
 ```
+
+---
+
+## `nrs claude observe`
+
+Analyzes a Claude Code transcript for agent struggle signals and writes detected gaps to `nrs.gaps.md`.
+
+```bash
+nrs claude observe --transcript path/to/transcript.jsonl --dir /path/to/project
+nrs claude observe --transcript path/to/transcript.jsonl --dry-run   # preview without writing
+nrs claude observe --hook-mode                                        # reads hook JSON from stdin
+```
+
+Invoked automatically by the Claude Code `SubagentStop` and `SessionEnd` hooks installed via `nrs generate claude`. SubagentStop analyzes subagent transcripts; SessionEnd analyzes the main session transcript.
+
+| Pattern | Signal | Gap type | Confidence |
+|---|---|---|---|
+| `excessive-reads` | 5+ source files read in a directory without writing | `missing-context` or `missing-pattern` | medium/high |
+| `no-context` | 3+ file operations in a directory without `*.context.md` | `missing-context` | high |
+| `re-reads` | Same file read 3+ times | `missing-pattern` | medium |
+| `backtracking` | Write → multiple reads → rewrite same file | `missing-pattern` | low |
+| `user-correction` | User correction markers followed by file writes | `wrong` | low |
+
+---
+
+## `nrs claude notify`
+
+Checks for observed context gaps and notifies the agent via hook output.
+
+```bash
+nrs claude notify --dir /path/to/project
+nrs claude notify --hook-mode            # reads hook JSON from stdin
+```
+
+Invoked automatically by the Claude Code `TaskCompleted` hook. Outputs `additionalContext` with gap summaries when observed gaps exist, suggesting the nrs-fix skill.
+
+---
+
+---
+
+## `nrs claude guard`
+
+Blocks agents from editing generated files (e.g. `CLAUDE.md`) and directs them to report a gap instead.
+
+```bash
+nrs claude guard --hook-mode   # reads hook JSON from stdin
+```
+
+Invoked automatically by the Claude Code `PreToolUse` hook (on `Edit`/`Write`). If the target file is a generated output, the edit is blocked with a message suggesting `nrs gap report`.
+
+---
+
+## `nrs claude layers`
+
+Lists all CLAUDE.md files in the project with the NRS layers each contains. Used to maintain layer awareness across context boundaries.
+
+```bash
+nrs claude layers --dir /path/to/project
+nrs claude layers --hook-mode      # reads hook JSON from stdin, outputs additionalContext
+```
+
+Invoked automatically by three Claude Code hooks:
+- `PreCompact` — before context compaction, so compacted context retains layer paths
+- `PostCompact` — after compaction, re-injecting layer paths into the new context
+- `SubagentStart` — when a subagent starts, providing layer orientation
+
+---
+
+## Hooks
+
+All hooks are installed by `nrs generate claude` into `.claude/settings.json`.
+
+| Hook | Command | Purpose |
+|---|---|---|
+| `SessionStart` | `nrs gap summary && nrs validate` | Gap + validation briefing at session start |
+| `SessionEnd` | `nrs claude observe --hook-mode` | Signal detection on main session transcript |
+| `SubagentStop` | `nrs claude observe --hook-mode` | Signal detection on subagent transcript |
+| `SubagentStart` | `nrs claude layers --hook-mode` | Layer orientation for new subagents |
+| `TaskCompleted` | `nrs claude notify --hook-mode` | Notify agent about observed gaps |
+| `PreToolUse` (Edit\|Write) | `nrs claude guard --hook-mode` | Block edits to generated files |
+| `PreCompact` | `nrs claude layers --hook-mode` | Forward CLAUDE.md paths before compaction |
+| `PostCompact` | `nrs claude layers --hook-mode` | Re-inject CLAUDE.md paths after compaction |
+| `FileChanged` (*.context.md) | `nrs generate claude && nrs validate` | Keep generated output in sync |

@@ -1,8 +1,10 @@
 mod commands;
 mod discovery;
+mod gaps;
 mod generators;
 mod markdown;
 mod model;
+mod observe;
 mod validate;
 
 use anyhow::Result;
@@ -48,10 +50,63 @@ enum Command {
         /// Target tool (e.g., claude, all)
         target: String,
     },
+    /// Claude Code integration
+    Claude {
+        #[command(subcommand)]
+        action: ClaudeAction,
+    },
     /// Report and view context gaps
     Gap {
         #[command(subcommand)]
         action: GapAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ClaudeAction {
+    /// Observe agent behavior from a transcript and report signals as gaps
+    Observe {
+        /// Path to a Claude Code transcript JSONL file
+        #[arg(long)]
+        transcript: Option<std::path::PathBuf>,
+
+        /// Project root directory
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+
+        /// Print detected signals without writing to nrs.gaps.md
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Read hook JSON from stdin (used by Claude Code SubagentStop/SessionEnd hooks)
+        #[arg(long)]
+        hook_mode: bool,
+    },
+    /// Block edits to generated files and suggest gap reporting
+    Guard {
+        /// Read hook JSON from stdin (used by Claude Code PreToolUse hook)
+        #[arg(long)]
+        hook_mode: bool,
+    },
+    /// List CLAUDE.md files with their NRS layer descriptions
+    Layers {
+        /// Project root directory
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+
+        /// Read hook JSON from stdin (used by Claude Code hooks)
+        #[arg(long)]
+        hook_mode: bool,
+    },
+    /// Notify agent about observed context gaps after task completion
+    Notify {
+        /// Project root directory
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+
+        /// Read hook JSON from stdin (used by Claude Code TaskCompleted hook)
+        #[arg(long)]
+        hook_mode: bool,
     },
 }
 
@@ -98,6 +153,23 @@ fn run() -> Result<()> {
         Command::Validate { dir, strict } => commands::validate::run(&dir, strict),
         Command::Init { dir } => commands::init::run(&dir),
         Command::Install { target } => commands::install::run(&target),
+        Command::Claude { action } => match action {
+            ClaudeAction::Observe {
+                transcript,
+                dir,
+                dry_run,
+                hook_mode,
+            } => commands::observe::run(transcript.as_deref(), &dir, dry_run, hook_mode),
+            ClaudeAction::Guard { hook_mode } => {
+                commands::guard::run(hook_mode)
+            }
+            ClaudeAction::Layers { dir, hook_mode } => {
+                commands::layers::run(&dir, hook_mode)
+            }
+            ClaudeAction::Notify { dir, hook_mode } => {
+                commands::notify::run(&dir, hook_mode)
+            }
+        },
         Command::Gap { action } => match action {
             GapAction::Report {
                 r#type,

@@ -1,5 +1,9 @@
 pub mod gap;
 pub mod generate;
+pub mod guard;
 pub mod init;
+pub mod layers;
 pub mod install;
+pub mod notify;
+pub mod observe;
 pub mod validate;

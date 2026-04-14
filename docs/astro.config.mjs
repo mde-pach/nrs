@@ -19,6 +19,7 @@ export default defineConfig({
 						{ label: 'Context Layers', slug: 'concepts/layers' },
 						{ label: 'Rules', slug: 'concepts/rules' },
 						{ label: 'Workflow', slug: 'concepts/workflow' },
+						{ label: 'Lifecycle', slug: 'concepts/lifecycle' },
 					],
 				},
 				{

@@ -48,6 +48,19 @@ impl Layer {
         )
     }
 
+    /// Human-readable name for this layer.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Nrs => "nrs",
+            Self::Corporate => "corporate",
+            Self::Team => "team",
+            Self::Project => "project",
+            Self::Domain => "domain",
+            Self::Implementation => "implementation",
+            Self::Custom => "custom",
+        }
+    }
+
     /// Maximum recommended line count for this layer.
     pub fn size_limit(self) -> usize {
         if self.is_root() {
@@ -82,6 +95,17 @@ mod tests {
     fn from_filename_unknown_is_custom() {
         assert_eq!(Layer::from_filename("custom.context.md"), Layer::Custom);
         assert_eq!(Layer::from_filename("anything.context.md"), Layer::Custom);
+    }
+
+    #[test]
+    fn name_returns_layer_name() {
+        assert_eq!(Layer::Nrs.name(), "nrs");
+        assert_eq!(Layer::Corporate.name(), "corporate");
+        assert_eq!(Layer::Team.name(), "team");
+        assert_eq!(Layer::Project.name(), "project");
+        assert_eq!(Layer::Domain.name(), "domain");
+        assert_eq!(Layer::Implementation.name(), "implementation");
+        assert_eq!(Layer::Custom.name(), "custom");
     }
 
     #[test]

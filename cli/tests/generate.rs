@@ -220,6 +220,98 @@ fn generate_preserves_docs_links() {
 }
 
 #[test]
+fn generate_claude_installs_all_hooks() {
+    let tmp = TempDir::new().unwrap();
+    write_file(tmp.path(), "project.context.md", "# Project\n");
+
+    Command::cargo_bin("nrs")
+        .unwrap()
+        .args(["generate", "claude", "--dir"])
+        .arg(tmp.path())
+        .assert()
+        .success();
+
+    let settings_path = tmp.path().join(".claude/settings.json");
+    assert!(settings_path.exists(), "settings.json should be created");
+    let body = std::fs::read_to_string(&settings_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+
+    // SubagentStop → observe
+    let subagent = parsed["hooks"]["SubagentStop"].as_array().unwrap();
+    assert_eq!(subagent.len(), 1);
+    assert_eq!(
+        subagent[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude observe --hook-mode"
+    );
+
+    // TaskCompleted → notify
+    let task = parsed["hooks"]["TaskCompleted"].as_array().unwrap();
+    assert_eq!(task.len(), 1);
+    assert_eq!(
+        task[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude notify --hook-mode"
+    );
+
+    // PreToolUse → guard
+    let pre = parsed["hooks"]["PreToolUse"].as_array().unwrap();
+    assert_eq!(pre.len(), 1);
+    assert_eq!(
+        pre[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude guard --hook-mode"
+    );
+    assert_eq!(pre[0]["matcher"].as_str().unwrap(), "Edit|Write");
+
+    // FileChanged → generate + validate
+    let file_changed = parsed["hooks"]["FileChanged"].as_array().unwrap();
+    assert_eq!(file_changed.len(), 1);
+    assert_eq!(
+        file_changed[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs generate claude && nrs validate"
+    );
+    assert_eq!(file_changed[0]["matcher"].as_str().unwrap(), "*.context.md");
+
+    // SessionStart → gap summary + validate
+    let session_start = parsed["hooks"]["SessionStart"].as_array().unwrap();
+    assert_eq!(session_start.len(), 1);
+    assert_eq!(
+        session_start[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs gap summary && nrs validate"
+    );
+
+    // SessionEnd → observe
+    let session_end = parsed["hooks"]["SessionEnd"].as_array().unwrap();
+    assert_eq!(session_end.len(), 1);
+    assert_eq!(
+        session_end[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude observe --hook-mode"
+    );
+
+    // PreCompact → layers
+    let pre_compact = parsed["hooks"]["PreCompact"].as_array().unwrap();
+    assert_eq!(pre_compact.len(), 1);
+    assert_eq!(
+        pre_compact[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude layers --hook-mode"
+    );
+
+    // PostCompact → layers
+    let post_compact = parsed["hooks"]["PostCompact"].as_array().unwrap();
+    assert_eq!(post_compact.len(), 1);
+    assert_eq!(
+        post_compact[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude layers --hook-mode"
+    );
+
+    // SubagentStart → layers
+    let subagent_start = parsed["hooks"]["SubagentStart"].as_array().unwrap();
+    assert_eq!(subagent_start.len(), 1);
+    assert_eq!(
+        subagent_start[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude layers --hook-mode"
+    );
+}
+
+#[test]
 fn generate_with_no_context_files_is_a_no_op() {
     let tmp = TempDir::new().unwrap();
 

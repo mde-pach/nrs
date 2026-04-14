@@ -44,6 +44,12 @@ When a task touches more than one domain or requires reading more than 5 files t
 
 When processing verbose tool outputs (test results, build logs, lint reports), extract only actionable information. Do not preserve full traces in working context. Sub-agents already provide this filtering at the architecture level — apply the same principle within a single session.
 
+## Signals
+
+NRS hooks observe agent behavior and automatically report context gaps. Gaps from signals appear in `nrs.gaps.md` with source `observed:<pattern>`. Manual gap reporting continues to work alongside automated signals.
+
+Hook lifecycle: SessionStart (gap + validation briefing) → SubagentStart (layer orientation) → PreToolUse (guard generated files) → SubagentStop/SessionEnd (observe transcript) → TaskCompleted (notify about gaps) → PreCompact/PostCompact (forward layer paths) → FileChanged (sync generated output).
+
 ## Commands
 
 - `nrs gap report` — report a context gap

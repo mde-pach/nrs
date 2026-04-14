@@ -85,6 +85,152 @@ impl Generator for ClaudeGenerator {
 
         Ok(())
     }
+
+    fn apply_hooks(&self, project_root: &Path) -> anyhow::Result<()> {
+        let settings_dir = project_root.join(".claude");
+        std::fs::create_dir_all(&settings_dir)?;
+
+        let settings_path = settings_dir.join("settings.json");
+        let mut settings: BTreeMap<String, serde_json::Value> = if settings_path.exists() {
+            let content = std::fs::read_to_string(&settings_path)?;
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            BTreeMap::new()
+        };
+
+        let hook_defs: Vec<(&str, serde_json::Value)> = vec![
+            (
+                "SubagentStop",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude observe --hook-mode"
+                    }]
+                }),
+            ),
+            (
+                "TaskCompleted",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude notify --hook-mode"
+                    }]
+                }),
+            ),
+            (
+                "PreToolUse",
+                serde_json::json!({
+                    "matcher": "Edit|Write",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude guard --hook-mode"
+                    }]
+                }),
+            ),
+            (
+                "FileChanged",
+                serde_json::json!({
+                    "matcher": "*.context.md",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs generate claude && nrs validate"
+                    }]
+                }),
+            ),
+            (
+                "SessionStart",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs gap summary && nrs validate"
+                    }]
+                }),
+            ),
+            (
+                "SessionEnd",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude observe --hook-mode"
+                    }]
+                }),
+            ),
+            (
+                "PreCompact",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude layers --hook-mode"
+                    }]
+                }),
+            ),
+            (
+                "PostCompact",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude layers --hook-mode"
+                    }]
+                }),
+            ),
+            (
+                "SubagentStart",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude layers --hook-mode"
+                    }]
+                }),
+            ),
+        ];
+
+        let hooks = settings
+            .entry("hooks".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        let hooks_obj = hooks.as_object_mut().unwrap();
+
+        let mut changed = false;
+        for (event, entry) in &hook_defs {
+            let command = entry["hooks"][0]["command"].as_str().unwrap();
+            let arr = hooks_obj
+                .entry(*event)
+                .or_insert_with(|| serde_json::json!([]));
+            let already_installed = arr
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|existing| {
+                    existing
+                        .get("hooks")
+                        .and_then(|h| h.as_array())
+                        .map(|hooks| {
+                            hooks.iter().any(|hook| {
+                                hook.get("command")
+                                    .and_then(|c| c.as_str())
+                                    .map(|c| c == command)
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false)
+                });
+            if !already_installed {
+                arr.as_array_mut().unwrap().push(entry.clone());
+                changed = true;
+            }
+        }
+
+        if changed {
+            let content = serde_json::to_string_pretty(&settings)?;
+            std::fs::write(&settings_path, content)?;
+
+            let relative = settings_path
+                .strip_prefix(project_root)
+                .unwrap_or(&settings_path);
+            println!("updated {}", relative.display());
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -362,6 +508,149 @@ mod tests {
             output.contains("https://example.com/domain.context.md"),
             "external URL should be unchanged"
         );
+    }
+
+    #[test]
+    fn apply_hooks_creates_settings_with_all_hooks() {
+        let tmp = TempDir::new().unwrap();
+        let gen = ClaudeGenerator;
+        gen.apply_hooks(tmp.path()).unwrap();
+
+        let settings_path = tmp.path().join(".claude/settings.json");
+        assert!(settings_path.exists());
+
+        let content = std::fs::read_to_string(&settings_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        // SubagentStop → observe
+        let subagent = parsed["hooks"]["SubagentStop"].as_array().unwrap();
+        assert_eq!(subagent.len(), 1);
+        assert_eq!(
+            subagent[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude observe --hook-mode"
+        );
+
+        // TaskCompleted → notify
+        let task = parsed["hooks"]["TaskCompleted"].as_array().unwrap();
+        assert_eq!(task.len(), 1);
+        assert_eq!(
+            task[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude notify --hook-mode"
+        );
+
+        // PreToolUse → guard
+        let pre = parsed["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre.len(), 1);
+        assert_eq!(
+            pre[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude guard --hook-mode"
+        );
+        assert_eq!(pre[0]["matcher"].as_str().unwrap(), "Edit|Write");
+
+        // FileChanged → generate + validate
+        let file_changed = parsed["hooks"]["FileChanged"].as_array().unwrap();
+        assert_eq!(file_changed.len(), 1);
+        assert_eq!(
+            file_changed[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs generate claude && nrs validate"
+        );
+        assert_eq!(file_changed[0]["matcher"].as_str().unwrap(), "*.context.md");
+
+        // SessionStart → gap summary + validate
+        let session_start = parsed["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(session_start.len(), 1);
+        assert_eq!(
+            session_start[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs gap summary && nrs validate"
+        );
+
+        // SessionEnd → observe
+        let session_end = parsed["hooks"]["SessionEnd"].as_array().unwrap();
+        assert_eq!(session_end.len(), 1);
+        assert_eq!(
+            session_end[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude observe --hook-mode"
+        );
+
+        // PreCompact → layers
+        let pre_compact = parsed["hooks"]["PreCompact"].as_array().unwrap();
+        assert_eq!(pre_compact.len(), 1);
+        assert_eq!(
+            pre_compact[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude layers --hook-mode"
+        );
+
+        // PostCompact → layers
+        let post_compact = parsed["hooks"]["PostCompact"].as_array().unwrap();
+        assert_eq!(post_compact.len(), 1);
+        assert_eq!(
+            post_compact[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude layers --hook-mode"
+        );
+
+        // SubagentStart → layers
+        let subagent_start = parsed["hooks"]["SubagentStart"].as_array().unwrap();
+        assert_eq!(subagent_start.len(), 1);
+        assert_eq!(
+            subagent_start[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude layers --hook-mode"
+        );
+    }
+
+    #[test]
+    fn apply_hooks_idempotent() {
+        let tmp = TempDir::new().unwrap();
+        let gen = ClaudeGenerator;
+        gen.apply_hooks(tmp.path()).unwrap();
+        gen.apply_hooks(tmp.path()).unwrap();
+
+        let content = std::fs::read_to_string(tmp.path().join(".claude/settings.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let subagent = parsed["hooks"]["SubagentStop"].as_array().unwrap();
+        assert_eq!(subagent.len(), 1, "observe hook should not be duplicated");
+        let task = parsed["hooks"]["TaskCompleted"].as_array().unwrap();
+        assert_eq!(task.len(), 1, "notify hook should not be duplicated");
+        let pre = parsed["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre.len(), 1, "guard hook should not be duplicated");
+        let file_changed = parsed["hooks"]["FileChanged"].as_array().unwrap();
+        assert_eq!(file_changed.len(), 1, "FileChanged hook should not be duplicated");
+        let session_start = parsed["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(session_start.len(), 1, "SessionStart hook should not be duplicated");
+        let session_end = parsed["hooks"]["SessionEnd"].as_array().unwrap();
+        assert_eq!(session_end.len(), 1, "SessionEnd hook should not be duplicated");
+        let pre_compact = parsed["hooks"]["PreCompact"].as_array().unwrap();
+        assert_eq!(pre_compact.len(), 1, "PreCompact hook should not be duplicated");
+        let post_compact = parsed["hooks"]["PostCompact"].as_array().unwrap();
+        assert_eq!(post_compact.len(), 1, "PostCompact hook should not be duplicated");
+        let subagent_start = parsed["hooks"]["SubagentStart"].as_array().unwrap();
+        assert_eq!(subagent_start.len(), 1, "SubagentStart hook should not be duplicated");
+    }
+
+    #[test]
+    fn apply_hooks_merges_with_existing_hooks() {
+        let tmp = TempDir::new().unwrap();
+        let settings_dir = tmp.path().join(".claude");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        std::fs::write(
+            settings_dir.join("settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"some-other-hook"}]}]}}"#,
+        )
+        .unwrap();
+
+        let gen = ClaudeGenerator;
+        gen.apply_hooks(tmp.path()).unwrap();
+
+        let content = std::fs::read_to_string(settings_dir.join("settings.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        // Existing hook preserved + NRS guard hook added
+        let pre = parsed["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre.len(), 2);
+        assert_eq!(pre[0]["hooks"][0]["command"].as_str().unwrap(), "some-other-hook");
+        assert_eq!(pre[1]["hooks"][0]["command"].as_str().unwrap(), "nrs claude guard --hook-mode");
+        // Other hooks added
+        assert_eq!(parsed["hooks"]["SubagentStop"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["hooks"]["TaskCompleted"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["hooks"]["FileChanged"].as_array().unwrap().len(), 1);
     }
 
     #[test]

@@ -49,6 +49,7 @@ pub fn run(target: &str, dir: &Path) -> Result<()> {
 
     for gen in &targets {
         gen.apply_ignores(&dir)?;
+        gen.apply_hooks(&dir)?;
     }
 
     Ok(())

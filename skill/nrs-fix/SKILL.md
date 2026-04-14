@@ -25,7 +25,18 @@ Run gap summary and read the gap file:
 nrs gap summary
 ```
 
-Present the gaps to the user grouped by target. Ask: *"Which area should we fix first, or should I work through all of them in priority order (most gaps first)?"*
+Present the gaps to the user grouped by target. Distinguish manual from observed gaps:
+- **Manual gaps** (source `manual`) — reported by agents during work
+- **Observed gaps** (source `observed:<pattern>`) — detected automatically from agent behavior signals
+
+For observed gaps, mention the pattern to help prioritize:
+- `observed:excessive-reads` — agents read many files without context to build understanding (high priority)
+- `observed:no-context` — agents worked in a directory with no context at all (high priority)
+- `observed:re-reads` — agents re-read the same files repeatedly (medium priority)
+- `observed:backtracking` — agents wrote, then re-read, then rewrote (low priority)
+- `observed:user-correction` — user corrected the agent's approach (check for inaccurate context)
+
+Prioritize high-confidence observed gaps first. Ask: *"Which area should we fix first, or should I work through all of them in priority order?"*
 
 ### Step 2 — Analyze (per target area)
 
