@@ -1,86 +1,126 @@
-# Hello World — Test Stories
+# Hello World — Backlog
 
-A scratchpad of user stories for exercising NRS with Claude Code on a realistic codebase. Pick one, build it with an agent, and pay attention to what NRS does around you — which context files get loaded, which gaps surface, whether the loop actually helps.
+Product roadmap for the Hello World Commerce app. Tickets are grouped by area, each with acceptance criteria. Pick one, build it.
 
-## How to use this
+## How to work a ticket
 
-1. **Branch off this testing branch — do not commit back to it.**
-   ```
-   git checkout -b story/<your-handle>-<story-slug>
-   ```
-   Your branch is a local scratchpad. No push, no PR. The point is to see the tool in action, not to ship the code.
+```
+git checkout -b story/<handle>-HW-<n>
+npm install && npm run db:setup
+npm run dev
+```
 
-2. **Bring the CLI on PATH.**
-   ```
-   cargo install --path ../../cli          # from this directory
-   # or use the repo-local build:
-   alias nrs=$(git rev-parse --show-toplevel)/cli/target/release/nrs
-   ```
-
-3. **Seed the app.**
-   ```
-   npm install
-   npm run db:setup
-   ```
-
-4. **Open Claude Code from this directory** and ask it to pick up one of the stories below. The session will fire the NRS hooks automatically (context layer injection, gap observation, guard on generated files).
-
-5. **Observe, don't just ship.** After the task:
-   - `nrs gap summary` — what gaps did the observer detect?
-   - Inspect `nrs.gaps.md` — which patterns (excessive-reads, no-context, re-reads, backtracking, user-correction) fired?
-   - Did Claude read the right `*.context.md` files before acting? Check the transcript or logs.
-   - Was the existing context sufficient? Did you end up explaining the same thing twice?
-
-6. **Reset between stories.**
-   ```
-   git checkout . && git clean -fd
-   rm -f nrs.gaps.md
-   npm run db:setup
-   ```
-
-## What a good run looks like
-
-- The agent loads `src/domains/<domain>/CLAUDE.md` before touching that domain.
-- If the story needs a business rule that isn't in context, `nrs.gaps.md` accumulates a `missing-context` or `missing-pattern` row — ideally before you have to correct the agent.
-- For cross-domain work, sub-agents fire with their own layer orientation (`SubagentStart` hook).
-- The guard blocks direct edits to `CLAUDE.md` and redirects you to `*.context.md`.
+Local branches only — nothing is pushed, nothing is merged. One ticket per branch. Reset between tickets with `git checkout . && git clean -fd && rm -f prisma/dev.db && npm run db:setup`.
 
 ---
 
-## Stories
+## Catalog
 
-### A. Context-sufficient (happy path — the loop should feel invisible)
+### HW-1 — Sort products on the home page
+As a shopper, I want to sort the product list by name or price so I can browse in an order that suits me.
+- `?sort=name-asc|name-desc|price-asc|price-desc` on `/`
+- Default sort is `name-asc`
+- Invalid values fall back to the default
+- Integration test covers each sort direction
 
-**A1. Sort products on the home page.** Add a `?sort=price|name` query param on `/` and wire the product listing to respect it. Integration test the sort order. Touches `src/app/page.tsx` and `src/domains/products/services/product-service.ts`.
+### HW-2 — Filter products by category
+As a shopper, I want to narrow the product list to a single category so I can find what I'm looking for faster.
+- `?category=<categoryId>` on `/`
+- Unknown category ids return an empty list, not an error
+- Categories render as a navigation strip above the product grid
+- Combines with `sort` from HW-1
+- Integration test with seeded categories
 
-**A2. Low-stock badge on product cards.** Products with `stockCount < 5` render a "Low stock" badge. Decide: is "low stock threshold" a product concern that belongs in `domain.context.md`, or a UI concern? Let the agent propose.
+### HW-3 — Search products by name
+As a shopper, I want to search products by keyword so I can find items without scrolling.
+- `?q=<term>` on `/`, case-insensitive, matches anywhere in the name
+- Empty `q` behaves as no filter
+- Integration test with seeded fixtures
 
-### B. Single domain, a rule to enforce that isn't yet wired
+### HW-4 — Low-stock indicator
+As a shopper, I want to know when an item is about to sell out so I can decide whether to buy now.
+- Product cards show a "Low stock" badge when `stockCount < 5`
+- Out-of-stock products (`stockCount === 0`) show "Unavailable" and the Add-to-Cart control is disabled
+- Component test covers both states
 
-**B1. Cancel a pending order.** `POST /api/orders/:id/cancel`. Orders' `domain.context.md` already says "cancellable only while pending" — enforce it, return a typed error for other statuses, add an integration test.
-
-**B2. Archive instead of delete.** Products' context says "a product with pending orders cannot be deleted, only archived." Add a delete endpoint that enforces this rule (archive when blocked, delete otherwise). The `archived` column exists on the schema; nothing uses it yet.
-
-### C. Cross-domain orchestration
-
-**C1. Refund a confirmed order.** Orders domain says refunds restore inventory. Add `POST /api/orders/:id/refund` that updates the order status and calls back into the products service to increment stock. Watch for: does the agent route the cross-domain call through the service boundary (per Orders' implementation context) or reach into the other domain's repository?
-
-**C2. Full checkout flow with inventory reservation.** `POST /api/orders` should create an order from the caller's cart, reserve stock for every line in one transaction, and clear the cart. If any line has insufficient stock, the whole checkout fails atomically. `checkout-service.ts` exists but is not wired end-to-end.
-
-### D. Context gaps — these stories are designed to surface missing context
-
-**D1. Discount codes at checkout.** Introduce a `DiscountCode` concept (fixed-amount or percentage). Checkout must record the applied code and the discounted total. No context exists for this today. Expected behaviour: the agent should propose where the concept lives (new domain? extension of Orders?) and write the context before the code. If it just dives into code, that's a gap in our operating rules.
-
-**D2. Wishlist.** Customers save products for later. No domain exists. Does the agent propose a new domain with its own `domain.context.md`, or stuff it into an existing one? Capture the reasoning.
-
-**D3. Guest checkout.** The `Order` model has a `customerId`. Can an anonymous customer check out? No context covers this. Gap. Watch whether the agent surfaces the ambiguity before writing code.
-
-### E. Context conflict — a business-rule change
-
-**E1. Reserve inventory on cart add.** Change the rule from "stock is checked only at order confirmation" to "adding an item to the cart reserves stock for 15 minutes, then releases automatically." Both `src/domains/products/domain.context.md` and `src/domains/orders/domain.context.md` need updating before the code changes. Test whether the agent updates context first (per the Propose-First rule) or jumps to code.
+### HW-5 — Product detail page
+As a shopper, I want a dedicated page per product so I can read the full description before adding to cart.
+- `/products/[id]` renders name, description, price, stock state
+- Missing id returns a 404
+- Add-to-cart button on this page reuses the same cart logic as the grid card
 
 ---
 
-## Feedback
+## Cart & Checkout
 
-Not every friction belongs in this file. If you hit a tool-level gap (e.g., a pattern the observer should detect but didn't), open an issue on the main nrs repo with the transcript and a short description. Context-file gaps stay local on your branch — they're exactly what the loop is supposed to surface.
+### HW-6 — Cancel a pending order
+As a customer, I want to cancel an order that hasn't shipped yet so I can change my mind without a refund process.
+- `POST /api/orders/:id/cancel`
+- Only orders with status `pending` can be cancelled; any other status returns a typed error mapped to `409 Conflict`
+- Cancelled orders restore reserved inventory (if inventory was reserved for this order)
+- Integration test covers: pending → cancelled success, confirmed → error, non-existent id → 404
+
+### HW-7 — Discount codes at checkout
+As a customer, I want to apply a promo code at checkout so I can get the advertised discount.
+- New concept: a discount code with either a fixed-cents amount or a percentage, an optional expiry, and an optional usage cap
+- Seed a handful of codes for testing
+- `POST /api/orders` accepts `{ discountCode?: string }`; invalid/expired/exhausted codes return a typed error
+- Order stores the code applied and the discounted total
+- Integration tests: valid fixed, valid percentage, expired, exhausted, unknown
+
+### HW-8 — Checkout with inventory reservation
+As a customer, I want checkout to either succeed fully or fail without half-charging me, so my cart stays consistent.
+- `POST /api/orders` reads the cart, verifies stock for every line, decrements stock, creates the order, clears the cart — in a single transaction
+- If any line has insufficient stock, the whole operation rolls back and returns a typed error listing the offending products
+- Integration tests: success path, partial stock failure, empty cart
+
+### HW-9 — Refund a confirmed order
+As a customer, I want to request a refund on an order so I can return items I no longer want.
+- `POST /api/orders/:id/refund`
+- Only `confirmed` / `shipped` / `delivered` orders can be refunded
+- Refund restores inventory for every line
+- Order status becomes `refunded`
+- Integration tests for each allowed status and one negative case
+
+### HW-10 — Guest checkout
+As a first-time visitor, I want to check out without creating an account so I can buy quickly.
+- Checkout accepts an anonymous session id in place of a customer id
+- Guest orders persist the email captured at checkout
+- Future lookup of a guest order requires the order id + email
+- Integration test covers the full guest flow
+
+---
+
+## Customer
+
+### HW-11 — Wishlist
+As a shopper, I want to save products for later so I can come back to them.
+- Add / remove a product from the customer's wishlist
+- Wishlist is visible on a `/wishlist` page
+- Adding an out-of-stock product is allowed; the wishlist surfaces the stock state
+- Integration tests for add, remove, and listing
+
+### HW-12 — Order history
+As a customer, I want to see the orders I've placed so I can track and reorder.
+- `/orders` lists the current customer's orders, most recent first
+- Each row links to `/orders/[id]` with the full order detail
+- Pagination via cursor
+- Integration test seeded with multiple orders
+
+---
+
+## Admin
+
+### HW-13 — Archive a product
+As an admin, I want to remove a product from the catalog without losing its history, so past orders still display correctly.
+- `DELETE /api/products/:id` archives when the product has any associated order line, otherwise deletes
+- Archived products do not appear in the public listings or search
+- Order history continues to render archived products using the stored snapshot
+- Integration tests: delete with no orders, delete with orders → archive, already-archived
+
+### HW-14 — Bulk stock update
+As an admin, I want to update stock counts for many products at once so inventory sync is fast.
+- `POST /api/admin/products/stock` accepts an array of `{ id, stockCount }`
+- The endpoint is transactional — any invalid id rolls back the whole batch
+- Response reports per-item success/failure when validation passes but a downstream step fails
+- Integration test with mixed valid / invalid payloads
