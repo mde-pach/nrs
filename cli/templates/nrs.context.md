@@ -4,7 +4,7 @@ NRS (Nested Reference System) provides structured context to guide AI agents wor
 
 ## Gap Reporting
 
-After completing a task, if you needed to read source files beyond those you modified to understand the working area — its domain concepts, implementation patterns, or architecture — report each gap:
+After completing a task, if you needed to read source files beyond those you modified to understand the working area — its domain concepts, implementation patterns, or architecture — run `nrs gap report` autonomously. Do not ask for approval.
 
     nrs gap report --type <type> --target <directory> --description "what's missing or wrong"
 
