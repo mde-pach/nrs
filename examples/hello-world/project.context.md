@@ -28,7 +28,7 @@ Domains communicate through service interfaces, never direct cross-domain databa
 - [Testing](docs/testing.md) — test framework, database setup, test shapes and conventions
 - [Server Components](docs/server-components.md) — rendering strategy, client/server wrapper pattern
 
-## Tools
+## Commands
 
 - `npm run dev` — start development server
 - `npm run build` — production build
