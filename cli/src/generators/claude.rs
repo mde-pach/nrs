@@ -7,7 +7,11 @@ pub struct ClaudeGenerator;
 
 const HEADER: &str = include_str!("../../templates/claude-header.txt");
 
-const IGNORE_PATTERNS: &[&str] = &["*.context.md"];
+const DENY_RULES: &[&str] = &[
+    "Read(*.context.md)",
+    "Edit(*.context.md)",
+    "Write(*.context.md)",
+];
 
 impl Generator for ClaudeGenerator {
     fn name(&self) -> &str {
@@ -35,7 +39,7 @@ impl Generator for ClaudeGenerator {
         out
     }
 
-    fn apply_ignores(&self, project_root: &Path) -> anyhow::Result<()> {
+    fn apply_permissions(&self, project_root: &Path) -> anyhow::Result<()> {
         let settings_dir = project_root.join(".claude");
         std::fs::create_dir_all(&settings_dir)?;
 
@@ -47,32 +51,40 @@ impl Generator for ClaudeGenerator {
             BTreeMap::new()
         };
 
-        let existing = settings
-            .get("ignorePatterns")
+        // Drop the legacy top-level ignorePatterns key (pre permissions.deny).
+        settings.remove("ignorePatterns");
+
+        let permissions = settings
+            .entry("permissions".to_string())
+            .or_insert_with(|| serde_json::json!({}));
+        let permissions_obj = permissions
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("permissions must be an object"))?;
+
+        // Drop legacy nested ignorePatterns — replaced by permissions.deny.
+        permissions_obj.remove("ignorePatterns");
+
+        let existing_deny = permissions_obj
+            .get("deny")
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
 
-        let mut patterns: Vec<String> = existing
+        let mut deny: Vec<String> = existing_deny
             .iter()
             .filter_map(|v| v.as_str().map(String::from))
             .collect();
 
-        for pat in IGNORE_PATTERNS {
-            let s = pat.to_string();
-            if !patterns.contains(&s) {
-                patterns.push(s);
+        for rule in DENY_RULES {
+            let s = rule.to_string();
+            if !deny.contains(&s) {
+                deny.push(s);
             }
         }
 
-        settings.insert(
-            "ignorePatterns".to_string(),
-            serde_json::Value::Array(
-                patterns
-                    .into_iter()
-                    .map(serde_json::Value::String)
-                    .collect(),
-            ),
+        permissions_obj.insert(
+            "deny".to_string(),
+            serde_json::Value::Array(deny.into_iter().map(serde_json::Value::String).collect()),
         );
 
         let content = serde_json::to_string_pretty(&settings)?;
@@ -337,39 +349,55 @@ mod tests {
     }
 
     #[test]
-    fn apply_ignores_creates_settings() {
+    fn apply_permissions_creates_settings() {
         let tmp = TempDir::new().unwrap();
         let gen = ClaudeGenerator;
-        gen.apply_ignores(tmp.path()).unwrap();
+        gen.apply_permissions(tmp.path()).unwrap();
 
         let settings_path = tmp.path().join(".claude/settings.local.json");
         assert!(settings_path.exists());
 
         let content = std::fs::read_to_string(&settings_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        let patterns = parsed["ignorePatterns"].as_array().unwrap();
-        assert!(patterns.contains(&serde_json::Value::String("*.context.md".into())));
+        let deny = parsed["permissions"]["deny"].as_array().unwrap();
+        assert!(deny.contains(&serde_json::Value::String("Read(*.context.md)".into())));
+        assert!(deny.contains(&serde_json::Value::String("Edit(*.context.md)".into())));
+        assert!(deny.contains(&serde_json::Value::String("Write(*.context.md)".into())));
     }
 
     #[test]
-    fn apply_ignores_merges_with_existing() {
+    fn apply_permissions_merges_with_existing_and_strips_legacy_ignores() {
         let tmp = TempDir::new().unwrap();
         let settings_dir = tmp.path().join(".claude");
         std::fs::create_dir_all(&settings_dir).unwrap();
         std::fs::write(
             settings_dir.join("settings.local.json"),
-            r#"{"ignorePatterns":["node_modules"],"other":"preserved"}"#,
+            r#"{"permissions":{"allow":["WebSearch"],"deny":["Bash(rm:*)"],"ignorePatterns":["old-nested"]},"ignorePatterns":["old-top"],"other":"preserved"}"#,
         )
         .unwrap();
 
         let gen = ClaudeGenerator;
-        gen.apply_ignores(tmp.path()).unwrap();
+        gen.apply_permissions(tmp.path()).unwrap();
 
         let content = std::fs::read_to_string(settings_dir.join("settings.local.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        let patterns = parsed["ignorePatterns"].as_array().unwrap();
-        assert!(patterns.contains(&serde_json::Value::String("node_modules".into())));
-        assert!(patterns.contains(&serde_json::Value::String("*.context.md".into())));
+
+        // Existing allow preserved.
+        let allow = parsed["permissions"]["allow"].as_array().unwrap();
+        assert!(allow.contains(&serde_json::Value::String("WebSearch".into())));
+
+        // Existing deny entry preserved + new rules appended.
+        let deny = parsed["permissions"]["deny"].as_array().unwrap();
+        assert!(deny.contains(&serde_json::Value::String("Bash(rm:*)".into())));
+        assert!(deny.contains(&serde_json::Value::String("Read(*.context.md)".into())));
+        assert!(deny.contains(&serde_json::Value::String("Edit(*.context.md)".into())));
+        assert!(deny.contains(&serde_json::Value::String("Write(*.context.md)".into())));
+
+        // Legacy ignorePatterns (both top-level and nested) removed.
+        assert!(parsed.get("ignorePatterns").is_none());
+        assert!(parsed["permissions"].get("ignorePatterns").is_none());
+
+        // Unrelated top-level keys preserved.
         assert_eq!(parsed["other"], "preserved");
     }
 
@@ -654,20 +682,19 @@ mod tests {
     }
 
     #[test]
-    fn apply_ignores_idempotent() {
+    fn apply_permissions_idempotent() {
         let tmp = TempDir::new().unwrap();
         let gen = ClaudeGenerator;
-        gen.apply_ignores(tmp.path()).unwrap();
-        gen.apply_ignores(tmp.path()).unwrap();
+        gen.apply_permissions(tmp.path()).unwrap();
+        gen.apply_permissions(tmp.path()).unwrap();
 
         let content =
             std::fs::read_to_string(tmp.path().join(".claude/settings.local.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-        let patterns = parsed["ignorePatterns"].as_array().unwrap();
-        let context_count = patterns
-            .iter()
-            .filter(|v| v.as_str() == Some("*.context.md"))
-            .count();
-        assert_eq!(context_count, 1);
+        let deny = parsed["permissions"]["deny"].as_array().unwrap();
+        for rule in ["Read(*.context.md)", "Edit(*.context.md)", "Write(*.context.md)"] {
+            let count = deny.iter().filter(|v| v.as_str() == Some(rule)).count();
+            assert_eq!(count, 1, "{rule} should appear exactly once");
+        }
     }
 }

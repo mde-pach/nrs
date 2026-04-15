@@ -9,9 +9,9 @@ pub trait Generator {
     fn output_filename(&self) -> &str;
     fn generate(&self, ctx: &DirectoryContext) -> String;
 
-    /// Apply ignore patterns to the tool's configuration at the project root.
-    /// Each generator knows its tool's config format.
-    fn apply_ignores(&self, _project_root: &Path) -> anyhow::Result<()> {
+    /// Apply permission rules (deny/allow) to the tool's configuration at the
+    /// project root. Each generator knows its tool's config format.
+    fn apply_permissions(&self, _project_root: &Path) -> anyhow::Result<()> {
         Ok(())
     }
 

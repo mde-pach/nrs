@@ -82,7 +82,7 @@ fn generate_orders_layers_correctly() {
 }
 
 #[test]
-fn generate_writes_claude_settings_with_ignore_pattern() {
+fn generate_writes_claude_settings_with_deny_rules() {
     let tmp = TempDir::new().unwrap();
     write_file(tmp.path(), "project.context.md", "# Project\n");
 
@@ -96,8 +96,12 @@ fn generate_writes_claude_settings_with_ignore_pattern() {
     let settings_path = tmp.path().join(".claude/settings.local.json");
     assert!(settings_path.exists());
     let body = std::fs::read_to_string(&settings_path).unwrap();
-    assert!(body.contains("ignorePatterns"));
-    assert!(body.contains("*.context.md"));
+    assert!(body.contains("\"deny\""));
+    assert!(body.contains("Read(*.context.md)"));
+    assert!(body.contains("Edit(*.context.md)"));
+    assert!(body.contains("Write(*.context.md)"));
+    // Legacy ignorePatterns key should not be emitted.
+    assert!(!body.contains("ignorePatterns"));
 }
 
 #[test]
