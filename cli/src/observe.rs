@@ -34,11 +34,15 @@ pub fn parse_transcript(content: &str, project_root: &Path) -> Vec<TranscriptEve
 }
 
 fn extract_events(value: &serde_json::Value, project_root: &Path) -> Vec<TranscriptEvent> {
+    // Claude Code transcripts wrap the message in a `message` field.
+    // Support both the wrapped format and the flat format (used in tests).
+    let msg = value.get("message").unwrap_or(value);
+
     let mut events = Vec::new();
 
     // Handle assistant messages with tool_use content blocks
-    if value.get("role").and_then(|v| v.as_str()) == Some("assistant") {
-        if let Some(content) = value.get("content").and_then(|v| v.as_array()) {
+    if msg.get("role").and_then(|v| v.as_str()) == Some("assistant") {
+        if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
             for block in content {
                 if block.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
                     let tool_name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -52,15 +56,15 @@ fn extract_events(value: &serde_json::Value, project_root: &Path) -> Vec<Transcr
     }
 
     // Handle user/human messages
-    if value.get("role").and_then(|v| v.as_str()) == Some("user") {
-        if let Some(text) = extract_user_text(value) {
+    if msg.get("role").and_then(|v| v.as_str()) == Some("user") {
+        if let Some(text) = extract_user_text(msg) {
             events.push(TranscriptEvent::UserMessage { content: text });
         }
     }
 
     // Handle tool_result with is_error
-    if value.get("role").and_then(|v| v.as_str()) == Some("user") {
-        if let Some(content) = value.get("content").and_then(|v| v.as_array()) {
+    if msg.get("role").and_then(|v| v.as_str()) == Some("user") {
+        if let Some(content) = msg.get("content").and_then(|v| v.as_array()) {
             for block in content {
                 if block.get("type").and_then(|v| v.as_str()) == Some("tool_result")
                     && block.get("is_error").and_then(|v| v.as_bool()) == Some(true)

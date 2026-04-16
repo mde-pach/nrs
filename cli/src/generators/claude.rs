@@ -11,6 +11,9 @@ const DENY_RULES: &[&str] = &[
     "Read(*.context.md)",
     "Edit(*.context.md)",
     "Write(*.context.md)",
+    "Read(nrs.gaps.candidates.md)",
+    "Edit(nrs.gaps.candidates.md)",
+    "Write(nrs.gaps.candidates.md)",
 ];
 
 impl Generator for ClaudeGenerator {
@@ -121,15 +124,6 @@ impl Generator for ClaudeGenerator {
                 }),
             ),
             (
-                "TaskCompleted",
-                serde_json::json!({
-                    "hooks": [{
-                        "type": "command",
-                        "command": "nrs claude notify --hook-mode"
-                    }]
-                }),
-            ),
-            (
                 "PreToolUse",
                 serde_json::json!({
                     "matcher": "Edit|Write",
@@ -159,12 +153,18 @@ impl Generator for ClaudeGenerator {
                 }),
             ),
             (
-                "SessionEnd",
+                "UserPromptSubmit",
                 serde_json::json!({
-                    "hooks": [{
-                        "type": "command",
-                        "command": "nrs claude observe --hook-mode"
-                    }]
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "nrs claude layers --hook-mode"
+                        },
+                        {
+                            "type": "command",
+                            "command": "nrs claude notify --hook-mode"
+                        }
+                    ]
                 }),
             ),
             (
@@ -381,6 +381,9 @@ mod tests {
         assert!(deny.contains(&serde_json::Value::String("Read(*.context.md)".into())));
         assert!(deny.contains(&serde_json::Value::String("Edit(*.context.md)".into())));
         assert!(deny.contains(&serde_json::Value::String("Write(*.context.md)".into())));
+        assert!(deny.contains(&serde_json::Value::String("Read(nrs.gaps.candidates.md)".into())));
+        assert!(deny.contains(&serde_json::Value::String("Edit(nrs.gaps.candidates.md)".into())));
+        assert!(deny.contains(&serde_json::Value::String("Write(nrs.gaps.candidates.md)".into())));
     }
 
     #[test]
@@ -576,14 +579,6 @@ mod tests {
             "nrs claude observe --hook-mode"
         );
 
-        // TaskCompleted → notify
-        let task = parsed["hooks"]["TaskCompleted"].as_array().unwrap();
-        assert_eq!(task.len(), 1);
-        assert_eq!(
-            task[0]["hooks"][0]["command"].as_str().unwrap(),
-            "nrs claude notify --hook-mode"
-        );
-
         // PreToolUse → guard
         let pre = parsed["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 1);
@@ -610,12 +605,18 @@ mod tests {
             "nrs gap summary && nrs validate"
         );
 
-        // SessionEnd → observe
-        let session_end = parsed["hooks"]["SessionEnd"].as_array().unwrap();
-        assert_eq!(session_end.len(), 1);
+        // UserPromptSubmit → layers + notify
+        let user_prompt = parsed["hooks"]["UserPromptSubmit"].as_array().unwrap();
+        assert_eq!(user_prompt.len(), 1);
+        let ups_hooks = user_prompt[0]["hooks"].as_array().unwrap();
+        assert_eq!(ups_hooks.len(), 2);
         assert_eq!(
-            session_end[0]["hooks"][0]["command"].as_str().unwrap(),
-            "nrs claude observe --hook-mode"
+            ups_hooks[0]["command"].as_str().unwrap(),
+            "nrs claude layers --hook-mode"
+        );
+        assert_eq!(
+            ups_hooks[1]["command"].as_str().unwrap(),
+            "nrs claude notify --hook-mode"
         );
 
         // PreCompact → layers
@@ -657,6 +658,16 @@ mod tests {
             stop_failure[0]["hooks"][0]["command"].as_str().unwrap(),
             "nrs claude observe --hook-mode"
         );
+
+        // TaskCompleted and SessionEnd should NOT be present
+        assert!(
+            parsed["hooks"].get("TaskCompleted").is_none(),
+            "TaskCompleted hook should not exist"
+        );
+        assert!(
+            parsed["hooks"].get("SessionEnd").is_none(),
+            "SessionEnd hook should not exist"
+        );
     }
 
     #[test]
@@ -670,16 +681,14 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
         let subagent = parsed["hooks"]["SubagentStop"].as_array().unwrap();
         assert_eq!(subagent.len(), 1, "observe hook should not be duplicated");
-        let task = parsed["hooks"]["TaskCompleted"].as_array().unwrap();
-        assert_eq!(task.len(), 1, "notify hook should not be duplicated");
         let pre = parsed["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 1, "guard hook should not be duplicated");
         let file_changed = parsed["hooks"]["FileChanged"].as_array().unwrap();
         assert_eq!(file_changed.len(), 1, "FileChanged hook should not be duplicated");
         let session_start = parsed["hooks"]["SessionStart"].as_array().unwrap();
         assert_eq!(session_start.len(), 1, "SessionStart hook should not be duplicated");
-        let session_end = parsed["hooks"]["SessionEnd"].as_array().unwrap();
-        assert_eq!(session_end.len(), 1, "SessionEnd hook should not be duplicated");
+        let user_prompt = parsed["hooks"]["UserPromptSubmit"].as_array().unwrap();
+        assert_eq!(user_prompt.len(), 1, "UserPromptSubmit hook should not be duplicated");
         let pre_compact = parsed["hooks"]["PreCompact"].as_array().unwrap();
         assert_eq!(pre_compact.len(), 1, "PreCompact hook should not be duplicated");
         let post_compact = parsed["hooks"]["PostCompact"].as_array().unwrap();
@@ -715,7 +724,7 @@ mod tests {
         assert_eq!(pre[1]["hooks"][0]["command"].as_str().unwrap(), "nrs claude guard --hook-mode");
         // Other hooks added
         assert_eq!(parsed["hooks"]["SubagentStop"].as_array().unwrap().len(), 1);
-        assert_eq!(parsed["hooks"]["TaskCompleted"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["hooks"]["UserPromptSubmit"].as_array().unwrap().len(), 1);
         assert_eq!(parsed["hooks"]["FileChanged"].as_array().unwrap().len(), 1);
     }
 
@@ -730,8 +739,8 @@ mod tests {
             std::fs::read_to_string(tmp.path().join(".claude/settings.local.json")).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
         let deny = parsed["permissions"]["deny"].as_array().unwrap();
-        for rule in ["Read(*.context.md)", "Edit(*.context.md)", "Write(*.context.md)"] {
-            let count = deny.iter().filter(|v| v.as_str() == Some(rule)).count();
+        for rule in DENY_RULES {
+            let count = deny.iter().filter(|v| v.as_str() == Some(*rule)).count();
             assert_eq!(count, 1, "{rule} should appear exactly once");
         }
     }

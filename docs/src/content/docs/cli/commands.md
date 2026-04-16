@@ -15,7 +15,7 @@ nrs generate claude --dir /path/to/project
 
 | Target | Output | Ignore config | Hooks |
 |---|---|---|---|
-| `claude` | `CLAUDE.md` | `.claude/settings.local.json` | `.claude/settings.json` (9 hooks — see [Hooks](#hooks)) |
+| `claude` | `CLAUDE.md` | `.claude/settings.local.json` | `.claude/settings.json` (10 hooks — see [Hooks](#hooks)) |
 
 Ordering: nrs → corporate → team → project → domain → implementation.
 
@@ -100,7 +100,7 @@ nrs gap summary --dir /path/to/project
 
 ## `nrs claude observe`
 
-Analyzes a Claude Code transcript for agent struggle signals and writes detected gaps to `nrs.gaps.md`.
+Analyzes a Claude Code transcript for agent struggle signals and writes detected gaps to `nrs.gaps.candidates.md`.
 
 ```bash
 nrs claude observe --transcript path/to/transcript.jsonl --dir /path/to/project
@@ -108,7 +108,7 @@ nrs claude observe --transcript path/to/transcript.jsonl --dry-run   # preview w
 nrs claude observe --hook-mode                                        # reads hook JSON from stdin
 ```
 
-Invoked automatically by the Claude Code `SubagentStop` and `SessionEnd` hooks installed via `nrs generate claude`. SubagentStop analyzes subagent transcripts; SessionEnd analyzes the main session transcript.
+Invoked automatically by the Claude Code `SubagentStop`, `Stop`, and `StopFailure` hooks installed via `nrs generate claude`. Detected gaps are staged in `nrs.gaps.candidates.md` for the `notify` command to surface.
 
 | Pattern | Signal | Gap type | Confidence |
 |---|---|---|---|
@@ -129,7 +129,7 @@ nrs claude notify --dir /path/to/project
 nrs claude notify --hook-mode            # reads hook JSON from stdin
 ```
 
-Invoked automatically by the Claude Code `TaskCompleted` hook. Outputs `additionalContext` with gap summaries when observed gaps exist, suggesting the nrs-fix skill.
+Invoked automatically by the Claude Code `UserPromptSubmit` hook. Reads `nrs.gaps.candidates.md`, outputs a self-contained prompt via `additionalContext` with detection metrics and triage instructions, then clears the candidates file. Silent when no candidates exist.
 
 ---
 
@@ -170,10 +170,11 @@ All hooks are installed by `nrs generate claude` into `.claude/settings.json`.
 | Hook | Command | Purpose |
 |---|---|---|
 | `SessionStart` | `nrs gap summary && nrs validate` | Gap + validation briefing at session start |
-| `SessionEnd` | `nrs claude observe --hook-mode` | Signal detection on main session transcript |
+| `UserPromptSubmit` | `nrs claude notify --hook-mode` | Surface observed gap candidates to the agent |
 | `SubagentStop` | `nrs claude observe --hook-mode` | Signal detection on subagent transcript |
 | `SubagentStart` | `nrs claude layers --hook-mode` | Layer orientation for new subagents |
-| `TaskCompleted` | `nrs claude notify --hook-mode` | Notify agent about observed gaps |
+| `Stop` | `nrs claude observe --hook-mode` | Signal detection on session transcript |
+| `StopFailure` | `nrs claude observe --hook-mode` | Signal detection on failed session transcript |
 | `PreToolUse` (Edit\|Write) | `nrs claude guard --hook-mode` | Block edits to generated files |
 | `PreCompact` | `nrs claude layers --hook-mode` | Forward CLAUDE.md paths before compaction |
 | `PostCompact` | `nrs claude layers --hook-mode` | Re-inject CLAUDE.md paths after compaction |

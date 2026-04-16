@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 
 pub const GAPS_FILENAME: &str = "nrs.gaps.md";
+pub const CANDIDATES_FILENAME: &str = "nrs.gaps.candidates.md";
 
 pub const VALID_TYPES: &[&str] = &["missing-context", "missing-concept", "missing-pattern", "wrong"];
 

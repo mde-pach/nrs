@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::gaps::{self, GAPS_FILENAME};
+use crate::gaps::{self, CANDIDATES_FILENAME};
 use crate::observe;
 
 pub fn run(transcript: Option<&Path>, dir: &Path, dry_run: bool, hook_mode: bool) -> Result<()> {
@@ -54,7 +54,7 @@ pub fn run(transcript: Option<&Path>, dir: &Path, dry_run: bool, hook_mode: bool
         return Ok(());
     }
 
-    let gaps_path = project_root.join(GAPS_FILENAME);
+    let gaps_path = project_root.join(CANDIDATES_FILENAME);
     for gap in &detected_gaps {
         gaps::append_gap(&gaps_path, gap)?;
     }
@@ -63,7 +63,7 @@ pub fn run(transcript: Option<&Path>, dir: &Path, dry_run: bool, hook_mode: bool
         println!(
             "wrote {} signal(s) to {}",
             detected_gaps.len(),
-            GAPS_FILENAME
+            CANDIDATES_FILENAME
         );
     }
 

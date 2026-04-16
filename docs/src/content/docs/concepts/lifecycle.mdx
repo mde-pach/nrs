@@ -56,7 +56,7 @@ Struggle is a signal that context is missing or wrong. NRS tracks five patterns 
 
 ### Report
 
-Detected gaps land in `nrs.gaps.md` with source `observed:<pattern>`. Agents can also report manually via `nrs gap report` — same file, same schema, `source: manual`. Duplicates are preserved so frequency signals priority.
+Detected gaps are staged in `nrs.gaps.candidates.md` with source `observed:<pattern>`. At the next user prompt, `notify` surfaces them to the agent as a self-contained summary with triage instructions, then clears the staging file. Agents can also report confirmed gaps manually via `nrs gap report` — those land directly in `nrs.gaps.md` with `source: manual`. Duplicates are preserved so frequency signals priority.
 
 ### Fix
 
@@ -76,11 +76,11 @@ In Claude Code, each lifecycle stage is backed by concrete hook events installed
 | Act | `PreCompact` | `nrs claude layers --hook-mode` | Forward layer paths before compaction |
 | Act | `PreToolUse` (Edit\|Write) | `nrs claude guard --hook-mode` | Block edits to generated files |
 | Observe | `SubagentStop` | `nrs claude observe --hook-mode` | Signal detection on subagent transcript |
-| Observe | `SessionEnd` | `nrs claude observe --hook-mode` | Signal detection on main session transcript |
-| Report | `TaskCompleted` | `nrs claude notify --hook-mode` | Surface observed gaps + suggest `nrs-fix` |
+| Observe | `Stop` / `StopFailure` | `nrs claude observe --hook-mode` | Signal detection on session transcript |
+| Report | `UserPromptSubmit` | `nrs claude notify --hook-mode` | Surface gap candidates with triage instructions |
 | Fix | `FileChanged` (`*.context.md`) | `nrs generate claude && nrs validate` | Regenerate and re-validate on every edit |
 
-Nine hooks, one loop. See [Commands](/nrs/cli/commands/#hooks) for the reference table with exact JSON matchers.
+Ten hooks, one loop. See [Commands](/nrs/cli/commands/#hooks) for the reference table with exact JSON matchers.
 
 ### Session Timeline
 
@@ -102,11 +102,13 @@ sequenceDiagram
     N-->>C: guard — allow or block
     C->>F: tool use
     C->>N: SubagentStop → nrs claude observe
-    N->>F: append observed gaps to nrs.gaps.md
-    C->>N: TaskCompleted → nrs claude notify
-    N-->>C: observed-gap summary + nrs-fix hint
-    C->>N: SessionEnd → nrs claude observe
-    N->>F: append main-session gaps
+    N->>F: append gaps to nrs.gaps.candidates.md
+    C->>N: Stop → nrs claude observe
+    N->>F: append session gaps to nrs.gaps.candidates.md
+    U->>C: next prompt
+    C->>N: UserPromptSubmit → nrs claude notify
+    N-->>C: gap candidate metrics + triage instruction
+    N->>F: clear nrs.gaps.candidates.md
     F-->>N: FileChanged (*.context.md)
     N->>F: regenerate CLAUDE.md + validate
 ```
@@ -116,8 +118,8 @@ sequenceDiagram
 - **`SessionStart`** greets the agent with what is known to be broken. No prompt archaeology.
 - **`SubagentStart` / `PreCompact` / `PostCompact`** keep layer awareness alive across context boundaries — subagents and compaction both erase working memory; these hooks restore the map.
 - **`PreToolUse`** enforces the invariant that generated files are never hand-edited. If an agent tries, it is redirected to `nrs gap report`.
-- **`SubagentStop` / `SessionEnd`** run the same observer on both subagent and main transcripts, so struggle anywhere in the session is captured.
-- **`TaskCompleted`** closes the loop inside the session: the agent learns about its own friction before the user has to point it out.
+- **`SubagentStop` / `Stop` / `StopFailure`** run the observer on both subagent and main transcripts, so struggle anywhere in the session is captured. Detected gaps are staged in `nrs.gaps.candidates.md`.
+- **`UserPromptSubmit`** closes the loop organically: at the next user prompt, the agent receives a self-contained summary of gap candidates with metrics and triage instructions — either delegate to a background sub-agent or ignore.
 - **`FileChanged`** ensures authored context and generated outputs never diverge. Editing any `*.context.md` regenerates every affected entry point and re-runs validation.
 
 ## Closing

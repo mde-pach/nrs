@@ -2,16 +2,8 @@
 
 ## Planned
 
-### Spec & Guidelines
-
-### Tooling
-
 - **Gap resolution skill** — A dedicated skill (like nrs-setup) that reads `nrs.gaps.md`, picks gaps prioritized by frequency, proposes context file updates to the user, and removes resolved rows in the same commit. The consumption side of gap reporting — separate from the development workflow where gaps are only logged.
-
-### Protocol
-
 - **Context Protocol spec** — Tool-agnostic protocol for context discovery, resolution, and signal reporting. Enables Cursor, Windsurf, Copilot, and other tools to participate in the NRS feedback loop without tool-specific generators. Formalizes the `TranscriptEvent` abstraction and `Gap` model as a cross-tool API.
-
 
 ## Done
 
@@ -19,11 +11,11 @@
 - CLI: generate, validate, init, install
 - CLI: gap report + gap summary
 - CLI: observe — transcript analysis for agent struggle signals with 5 pattern detectors (excessive-reads, no-context, re-reads, backtracking, user-correction)
-- Signal integration — Claude Code hooks installed by `nrs generate claude` (9 hooks: SessionStart, SessionEnd, SubagentStop, SubagentStart, TaskCompleted, PreToolUse, PreCompact, PostCompact, FileChanged)
-- Session lifecycle hooks — SessionStart health briefing, SessionEnd main session observe, PreCompact/PostCompact layer forwarding, SubagentStart layer orientation
-- Enhanced gap format — 5-column `nrs.gaps.md` with source and confidence fields
+- Signal integration — Claude Code hooks installed by `nrs generate claude` (10 hooks: SessionStart, UserPromptSubmit, SubagentStop, SubagentStart, Stop, StopFailure, PreToolUse, PreCompact, PostCompact, FileChanged)
+- Session lifecycle hooks — SessionStart health briefing, UserPromptSubmit gap surfacing, Stop/StopFailure/SubagentStop observe, PreCompact/PostCompact layer forwarding, SubagentStart layer orientation
+- Enhanced gap format — 5-column `nrs.gaps.md` with source and confidence fields; `nrs.gaps.candidates.md` staging for observe→notify pipeline
 - Validators: size, source paths, references, links, duplication, orphan docs, generated drift
-- Claude generator + settings.local.json ignore patterns
+- Claude generator + settings.local.json permissions.deny
 - nrs-setup skill for Claude Code
 - nrs-fix skill for Claude Code (signal-aware gap assessment)
 - Pre-commit hook automation

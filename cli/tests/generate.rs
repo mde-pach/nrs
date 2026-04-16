@@ -100,6 +100,9 @@ fn generate_writes_claude_settings_with_deny_rules() {
     assert!(body.contains("Read(*.context.md)"));
     assert!(body.contains("Edit(*.context.md)"));
     assert!(body.contains("Write(*.context.md)"));
+    assert!(body.contains("Read(nrs.gaps.candidates.md)"));
+    assert!(body.contains("Edit(nrs.gaps.candidates.md)"));
+    assert!(body.contains("Write(nrs.gaps.candidates.md)"));
     // Legacy ignorePatterns key should not be emitted.
     assert!(!body.contains("ignorePatterns"));
 }
@@ -248,14 +251,6 @@ fn generate_claude_installs_all_hooks() {
         "nrs claude observe --hook-mode"
     );
 
-    // TaskCompleted → notify
-    let task = parsed["hooks"]["TaskCompleted"].as_array().unwrap();
-    assert_eq!(task.len(), 1);
-    assert_eq!(
-        task[0]["hooks"][0]["command"].as_str().unwrap(),
-        "nrs claude notify --hook-mode"
-    );
-
     // PreToolUse → guard
     let pre = parsed["hooks"]["PreToolUse"].as_array().unwrap();
     assert_eq!(pre.len(), 1);
@@ -282,12 +277,18 @@ fn generate_claude_installs_all_hooks() {
         "nrs gap summary && nrs validate"
     );
 
-    // SessionEnd → observe
-    let session_end = parsed["hooks"]["SessionEnd"].as_array().unwrap();
-    assert_eq!(session_end.len(), 1);
+    // UserPromptSubmit → layers + notify
+    let user_prompt = parsed["hooks"]["UserPromptSubmit"].as_array().unwrap();
+    assert_eq!(user_prompt.len(), 1);
+    let ups_hooks = user_prompt[0]["hooks"].as_array().unwrap();
+    assert_eq!(ups_hooks.len(), 2);
     assert_eq!(
-        session_end[0]["hooks"][0]["command"].as_str().unwrap(),
-        "nrs claude observe --hook-mode"
+        ups_hooks[0]["command"].as_str().unwrap(),
+        "nrs claude layers --hook-mode"
+    );
+    assert_eq!(
+        ups_hooks[1]["command"].as_str().unwrap(),
+        "nrs claude notify --hook-mode"
     );
 
     // PreCompact → layers
@@ -312,6 +313,32 @@ fn generate_claude_installs_all_hooks() {
     assert_eq!(
         subagent_start[0]["hooks"][0]["command"].as_str().unwrap(),
         "nrs claude layers --hook-mode"
+    );
+
+    // Stop → observe
+    let stop = parsed["hooks"]["Stop"].as_array().unwrap();
+    assert_eq!(stop.len(), 1);
+    assert_eq!(
+        stop[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude observe --hook-mode"
+    );
+
+    // StopFailure → observe
+    let stop_failure = parsed["hooks"]["StopFailure"].as_array().unwrap();
+    assert_eq!(stop_failure.len(), 1);
+    assert_eq!(
+        stop_failure[0]["hooks"][0]["command"].as_str().unwrap(),
+        "nrs claude observe --hook-mode"
+    );
+
+    // TaskCompleted and SessionEnd should NOT be present
+    assert!(
+        parsed["hooks"].get("TaskCompleted").is_none(),
+        "TaskCompleted hook should not exist"
+    );
+    assert!(
+        parsed["hooks"].get("SessionEnd").is_none(),
+        "SessionEnd hook should not exist"
     );
 }
 

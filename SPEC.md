@@ -329,7 +329,7 @@ Gaps are reported after task completion, not during. Only report when gaps exist
 
 ### Ensure
 - **No drift from spec**: Automated checks keep implementation aligned with intent
-- **Auto-updated docs**: Documentation updates are part of the workflow, not an afterthought. The most pervasive documentation problems — outdated, incomplete, and inconsistent information — are systematic and categorizable[15]. Automation is the only reliable prevention.
+- **Auto-updated docs**: Documentation updates are part of the workflow, not an afterthought. Automation is the only reliable prevention of outdated, incomplete, and inconsistent information.
 - **Codebase navigability from higher-level files**: You should not need to read the entire codebase to make a change. The structure is carried by context documents at higher layers. SWE-bench demonstrated that codebase structure and organization are the critical barriers for AI agents tackling real-world issues[10].
 - **Context gap feedback loop**: Agents report missing or incorrect context during development via `nrs gap report`. Frequency of reports signals priority — the most-reported gaps get fixed first. Over time, context files converge toward precisely sufficient coverage driven by real usage, not speculative completeness.
 
@@ -348,6 +348,9 @@ However, multi-agent decomposition is not free of risk. 75.3% of multi-agent fai
 
 ### Context Survival
 The task-based approach is designed to survive context window compaction. Tasks persist across conversation compression, maintaining continuity even when earlier messages are compacted.
+
+### Output Discipline
+Verbose tool outputs (test results, build logs, lint reports) must be filtered at the point of ingestion — only actionable information should persist in working context. The same separation that sub-agents provide at the architecture level applies within a single session. Carrying full traces forward degrades reasoning even when the information remains retrievable[1].
 
 ### Propose First, Act After
 Every significant action must be proposed and approved before execution. This applies to implementation plans, architectural decisions, approach choices, and any work that consumes time or changes code. The agent presents what it intends to do, the user confirms, then work begins. This minimizes wasted iterations and keeps the user in control of direction. Agent autonomy must be a deliberate, calibrated design decision[12].
@@ -381,7 +384,6 @@ ___
 [12]: https://arxiv.org/abs/2506.12469 (Feng, K.J.K. et al. "Levels of Autonomy for AI Agents." 2025.)
 [13]: https://dl.acm.org/doi/10.1145/3476105 (Parry, O. et al. "A Survey of Flaky Tests." ACM TOSEM, 2022.)
 [14]: https://link.springer.com/article/10.1007/s10664-008-9062-z (Nagappan, N. et al. "Realizing Quality Improvement Through Test Driven Development." Empirical Software Engineering, 2008.)
-[15]: https://dl.acm.org/doi/10.1109/ICSE.2019.00122 (Aghajani, E. et al. "Software Documentation Issues Unveiled." ICSE, 2019.)
 [16]: https://arxiv.org/abs/2603.22608 (Chen et al. "Understanding LLM Performance Degradation in Multi-Instance Processing." 2026. Instance count stronger effect than context length.)
 [17]: https://arxiv.org/abs/2604.07502 (Ustynov, D. "Beyond Human-Readable: Rethinking Software Engineering Conventions for the Agentic Development Era." 2026.)
 [18]: https://arxiv.org/abs/2603.20432 (Cao, W. et al. "Coding Agents are Effective Long-Context Processors." 2026.)

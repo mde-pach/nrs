@@ -94,7 +94,7 @@ fn observe_writes_gaps_to_file() {
         .success()
         .stdout(contains("wrote"));
 
-    let gaps = std::fs::read_to_string(project.join("nrs.gaps.md")).unwrap();
+    let gaps = std::fs::read_to_string(project.join("nrs.gaps.candidates.md")).unwrap();
     assert!(gaps.contains("observed:excessive-reads"));
     assert!(gaps.contains("src/billing"));
 }
@@ -195,7 +195,7 @@ fn observe_user_correction_writes_wrong_gap_to_file() {
         .assert()
         .success();
 
-    let gaps = std::fs::read_to_string(project.join("nrs.gaps.md")).unwrap();
+    let gaps = std::fs::read_to_string(project.join("nrs.gaps.candidates.md")).unwrap();
     assert!(gaps.contains("observed:user-correction"));
     assert!(gaps.contains("wrong"));
     assert!(gaps.contains("src/billing"));
@@ -225,7 +225,7 @@ fn observe_detects_re_reads_pattern() {
         .assert()
         .success();
 
-    let gaps = std::fs::read_to_string(project.join("nrs.gaps.md")).unwrap();
+    let gaps = std::fs::read_to_string(project.join("nrs.gaps.candidates.md")).unwrap();
     assert!(gaps.contains("observed:re-reads"));
     assert!(gaps.contains("missing-pattern"));
 }
@@ -262,7 +262,7 @@ fn observe_detects_backtracking_pattern() {
         .assert()
         .success();
 
-    let gaps = std::fs::read_to_string(project.join("nrs.gaps.md")).unwrap();
+    let gaps = std::fs::read_to_string(project.join("nrs.gaps.candidates.md")).unwrap();
     assert!(gaps.contains("observed:backtracking"));
 }
 
@@ -299,7 +299,7 @@ fn observe_detects_multiple_patterns_in_one_transcript() {
         .assert()
         .success();
 
-    let gaps = std::fs::read_to_string(project.join("nrs.gaps.md")).unwrap();
+    let gaps = std::fs::read_to_string(project.join("nrs.gaps.candidates.md")).unwrap();
     assert!(gaps.contains("observed:excessive-reads"));
     assert!(gaps.contains("observed:no-context"));
 }
@@ -336,7 +336,7 @@ fn observe_hook_mode_accepts_session_end_json() {
         .assert()
         .success();
 
-    let gaps = std::fs::read_to_string(project.join("nrs.gaps.md")).unwrap();
+    let gaps = std::fs::read_to_string(project.join("nrs.gaps.candidates.md")).unwrap();
     assert!(gaps.contains("observed:excessive-reads"));
 }
 

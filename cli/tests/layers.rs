@@ -37,8 +37,8 @@ fn layers_lists_nested_context() {
         .arg(tmp.path())
         .assert()
         .success()
-        .stdout(contains("CLAUDE.md — project"))
-        .stdout(contains("src/billing/CLAUDE.md — domain"));
+        .stdout(contains("CLAUDE.md (project)"))
+        .stdout(contains("src/billing/CLAUDE.md (domain)"));
 }
 
 #[test]
