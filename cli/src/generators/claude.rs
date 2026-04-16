@@ -194,6 +194,24 @@ impl Generator for ClaudeGenerator {
                     }]
                 }),
             ),
+            (
+                "Stop",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude observe --hook-mode"
+                    }]
+                }),
+            ),
+            (
+                "StopFailure",
+                serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": "nrs claude observe --hook-mode"
+                    }]
+                }),
+            ),
         ];
 
         let hooks = settings
@@ -623,6 +641,22 @@ mod tests {
             subagent_start[0]["hooks"][0]["command"].as_str().unwrap(),
             "nrs claude layers --hook-mode"
         );
+
+        // Stop → observe
+        let stop = parsed["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1);
+        assert_eq!(
+            stop[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude observe --hook-mode"
+        );
+
+        // StopFailure → observe
+        let stop_failure = parsed["hooks"]["StopFailure"].as_array().unwrap();
+        assert_eq!(stop_failure.len(), 1);
+        assert_eq!(
+            stop_failure[0]["hooks"][0]["command"].as_str().unwrap(),
+            "nrs claude observe --hook-mode"
+        );
     }
 
     #[test]
@@ -652,6 +686,10 @@ mod tests {
         assert_eq!(post_compact.len(), 1, "PostCompact hook should not be duplicated");
         let subagent_start = parsed["hooks"]["SubagentStart"].as_array().unwrap();
         assert_eq!(subagent_start.len(), 1, "SubagentStart hook should not be duplicated");
+        let stop = parsed["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1, "Stop hook should not be duplicated");
+        let stop_failure = parsed["hooks"]["StopFailure"].as_array().unwrap();
+        assert_eq!(stop_failure.len(), 1, "StopFailure hook should not be duplicated");
     }
 
     #[test]
